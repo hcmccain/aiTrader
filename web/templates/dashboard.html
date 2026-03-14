@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Portfolio Trader</title>
+    <title>AI Portfolio Trader v2.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <style>
@@ -136,9 +136,9 @@
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader</h1>
+                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v2.0</span></h1>
                 <p class="text-sm text-slate-400 mt-1">
-                    Multi-agent simulation &middot; Powered by Claude
+                    Multi-agent simulation &middot; Built with Claude
                     <span id="marketStatus" class="ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
                         <span id="marketDot" class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
                         <span id="marketLabel">--</span>
@@ -459,8 +459,8 @@
                     <select id="mtTestGroup" class="input-field text-sm py-1.5 px-3" onchange="loadTestMatrix(this.value)" style="min-width:180px">
                         <option value="">No test groups</option>
                     </select>
-                    <button onclick="generateTestMatrix()" id="mtGenerateBtn" class="btn bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                        Generate All 64 Agents
+                    <button onclick="openGenerateModal()" id="mtGenerateBtn" class="btn bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                        Generate Test Models
                     </button>
                     <button onclick="deleteTestMatrix()" id="mtDeleteBtn" class="btn bg-red-600/80 hover:bg-red-500 text-white px-3 py-2 rounded-lg text-sm font-medium hidden">
                         Delete Matrix
@@ -519,7 +519,7 @@
                 <table class="matrix-table w-full">
                     <thead>
                         <tr class="text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700">
-                            <th onclick="sortMtTable('rank')">#</th>
+                            <th>#</th>
                             <th onclick="sortMtTable('section')">Section</th>
                             <th onclick="sortMtTable('scout_short')">Scout</th>
                             <th onclick="sortMtTable('decision_short')">Decision</th>
@@ -540,7 +540,7 @@
             <!-- Empty State -->
             <div id="mtEmpty" class="card p-12 text-center">
                 <p class="text-slate-400 text-lg mb-2">No test matrix created yet</p>
-                <p class="text-slate-500 text-sm mb-4">Click "Generate All 64 Agents" to create all scout/decision model combinations</p>
+                <p class="text-slate-500 text-sm mb-4">Click "Generate Test Models" to select and create model combinations</p>
             </div>
 
         </div><!-- END tab-modelTesting -->
@@ -559,6 +559,123 @@
                     </div>
                     <div class="overflow-y-auto flex-1 px-5 py-3" id="mtTradesBody">
                         <p class="text-slate-500 text-sm">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generate Test Models Modal -->
+        <div id="generateModal" class="fixed inset-0 z-50 hidden">
+            <div class="modal-overlay absolute inset-0" onclick="closeGenerateModal()"></div>
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+                <div class="card relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto" style="background:#1e293b;">
+                    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-700">
+                        <h3 class="text-sm font-semibold text-white">Generate Test Models</h3>
+                        <button onclick="closeGenerateModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+                    </div>
+                    <div class="px-5 py-4 space-y-5">
+
+                        <!-- Scout Models -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Scout Models</label>
+                                <button onclick="toggleAllChecks('scout', true)" class="text-[10px] text-indigo-400 hover:text-indigo-300">Select All</button>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2" id="genScoutChecks">
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="claude-haiku-4-20250414" checked class="gen-scout"> Haiku
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="claude-sonnet-4-20250514" checked class="gen-scout"> Sonnet
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="claude-opus-4-20250514" checked class="gen-scout"> Opus
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gpt-4o" checked class="gen-scout"> GPT-4o
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gpt-4o-mini" checked class="gen-scout"> GPT-4o Mini
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="o3-mini" checked class="gen-scout"> o3-mini
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gemini-2.5-pro" checked class="gen-scout"> Gemini Pro
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gemini-2.5-flash" checked class="gen-scout"> Gemini Flash
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Decision Models -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Decision Models</label>
+                                <button onclick="toggleAllChecks('decision', true)" class="text-[10px] text-indigo-400 hover:text-indigo-300">Select All</button>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2" id="genDecisionChecks">
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="claude-haiku-4-20250414" checked class="gen-decision"> Haiku
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="claude-sonnet-4-20250514" checked class="gen-decision"> Sonnet
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="claude-opus-4-20250514" checked class="gen-decision"> Opus
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gpt-4o" checked class="gen-decision"> GPT-4o
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gpt-4o-mini" checked class="gen-decision"> GPT-4o Mini
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="o3-mini" checked class="gen-decision"> o3-mini
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gemini-2.5-pro" checked class="gen-decision"> Gemini Pro
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="gemini-2.5-flash" checked class="gen-decision"> Gemini Flash
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Combo Count -->
+                        <div class="card px-4 py-2.5 text-center">
+                            <span class="text-xs text-slate-400">Selected combinations: </span>
+                            <span class="text-sm font-bold text-indigo-400" id="genComboCount">64</span>
+                        </div>
+
+                        <!-- Config -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Starting Capital per Agent</label>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                                    <input type="number" id="genCapital" value="10000" min="1000" max="100000" step="1000"
+                                        class="input-field w-full pl-7 py-2 text-sm">
+                                </div>
+                                <p class="text-[10px] text-slate-500 mt-1">Total: $<span id="genTotalCapital">640,000</span></p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Risk Level</label>
+                                <div class="flex items-center gap-3">
+                                    <input type="range" id="genRisk" min="1" max="10" value="5"
+                                        class="flex-1 accent-indigo-500" oninput="document.getElementById('genRiskVal').textContent=this.value">
+                                    <span class="text-sm font-bold text-white w-6 text-center" id="genRiskVal">5</span>
+                                </div>
+                                <p class="text-[10px] text-slate-500 mt-1">1 = ultra-conservative, 10 = aggressive</p>
+                            </div>
+                        </div>
+
+                        <!-- Generate Button -->
+                        <button onclick="submitGenerateMatrix()" id="genSubmitBtn"
+                            class="btn w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-lg text-sm font-semibold">
+                            Generate Test Models
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1959,8 +2076,40 @@
         const SECTION_LABELS = { ce:'Cheap/Exp', ee:'Exp/Exp', cc:'Cheap/Cheap', ec:'Exp/Cheap' };
         const SECTION_COLORS = { ce:'#60a5fa', ee:'#c084fc', cc:'#4ade80', ec:'#fbbf24' };
 
-        async function generateTestMatrix() {
-            const btn = document.getElementById('mtGenerateBtn');
+        function openGenerateModal() {
+            document.getElementById('generateModal').classList.remove('hidden');
+            updateComboCount();
+        }
+        function closeGenerateModal() {
+            document.getElementById('generateModal').classList.add('hidden');
+        }
+        function toggleAllChecks(role, state) {
+            document.querySelectorAll(`.gen-${role}`).forEach(cb => cb.checked = state);
+            updateComboCount();
+        }
+        function updateComboCount() {
+            const scouts = document.querySelectorAll('.gen-scout:checked').length;
+            const decisions = document.querySelectorAll('.gen-decision:checked').length;
+            const count = scouts * decisions;
+            document.getElementById('genComboCount').textContent = count;
+            const capital = parseInt(document.getElementById('genCapital').value) || 10000;
+            document.getElementById('genTotalCapital').textContent = (count * capital).toLocaleString();
+        }
+
+        document.addEventListener('change', e => {
+            if (e.target.classList.contains('gen-scout') || e.target.classList.contains('gen-decision') || e.target.id === 'genCapital') updateComboCount();
+        });
+        document.getElementById('genCapital').addEventListener('input', updateComboCount);
+
+        async function submitGenerateMatrix() {
+            const scouts = [...document.querySelectorAll('.gen-scout:checked')].map(cb => cb.value);
+            const decisions = [...document.querySelectorAll('.gen-decision:checked')].map(cb => cb.value);
+            if (!scouts.length || !decisions.length) { showToast('Select at least one scout and one decision model', 'error'); return; }
+
+            const capital = parseInt(document.getElementById('genCapital').value) || 10000;
+            const risk = parseInt(document.getElementById('genRisk').value) || 5;
+
+            const btn = document.getElementById('genSubmitBtn');
             btn.disabled = true;
             btn.textContent = 'Generating...';
             try {
@@ -1968,18 +2117,21 @@
                     method: 'POST',
                     headers: {'Content-Type':'application/json'},
                     body: JSON.stringify({
-                        starting_capital: 10000,
-                        risk_level: 5,
+                        starting_capital: capital,
+                        risk_level: risk,
                         check_interval_minutes: 5,
                         strategy_interval_minutes: 60,
+                        scout_models: scouts,
+                        decision_models: decisions,
                     }),
                 });
                 const data = await res.json();
                 if (data.error) { showToast(data.error, 'error'); return; }
                 showToast(`Created ${data.created} agents (${data.skipped} already existed)`);
+                closeGenerateModal();
                 await loadTestMatrix(data.test_group);
             } catch(e) { showToast('Failed: '+e.message, 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Generate All 64 Agents'; }
+            finally { btn.disabled = false; btn.textContent = 'Generate Test Models'; }
         }
 
         async function deleteTestMatrix() {

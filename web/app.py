@@ -392,19 +392,26 @@ async def api_generate_test_matrix(request: Request):
     from datetime import date as dt_date
     try:
         body = await request.json()
-        capital = float(body.get("starting_capital", 15000))
+        capital = float(body.get("starting_capital", 10000))
         risk_level = int(body.get("risk_level", 5))
         check_interval = int(body.get("check_interval_minutes", 5))
         strategy_interval = int(body.get("strategy_interval_minutes", 60))
         test_group = body.get("test_group", f"matrix-{dt_date.today().isoformat()}")
+
+        scout_models = body.get("scout_models", SUPPORTED_MODELS)
+        decision_models = body.get("decision_models", SUPPORTED_MODELS)
+        scout_models = [m for m in scout_models if m in SUPPORTED_MODELS]
+        decision_models = [m for m in decision_models if m in SUPPORTED_MODELS]
+        if not scout_models or not decision_models:
+            return JSONResponse({"error": "Select at least one scout and one decision model"}, status_code=400)
 
         existing = get_agents_by_test_group(test_group)
         existing_names = {a["name"] for a in existing}
 
         created = []
         skipped = 0
-        for scout in SUPPORTED_MODELS:
-            for decision in SUPPORTED_MODELS:
+        for scout in scout_models:
+            for decision in decision_models:
                 scout_short = MODEL_SHORT_NAMES.get(scout, scout)
                 decision_short = MODEL_SHORT_NAMES.get(decision, decision)
                 name = f"{scout_short}\u2192{decision_short}"
