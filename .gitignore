@@ -1,5 +1,4 @@
 .env
-db/
 __pycache__/
 *.pyc
 .venv/
@@ -7,3 +6,5 @@ venv/
 .DS_Store
 *.log
 .server.pid
+*.db-shm
+*.db-wal

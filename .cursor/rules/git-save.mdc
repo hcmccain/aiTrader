@@ -1,0 +1,18 @@
+---
+description: When the user asks to "save", "save my work", "push", or "commit", automatically stage, commit, and push all changes to GitHub.
+alwaysApply: true
+---
+
+# Git Save Workflow
+
+When the user asks to save their work, commit, or push changes:
+
+1. Run `git add -A` to stage all changes.
+2. Run `git diff --cached --stat` to review what's being committed.
+3. Write a concise commit message summarizing the changes.
+4. Run `git commit -m "message"` to commit.
+5. Run `git push` to push to GitHub.
+6. Confirm to the user what was committed and pushed.
+
+- Never commit `.env` or other secret files (already handled by `.gitignore`).
+- If there are no changes, let the user know everything is already up to date.
