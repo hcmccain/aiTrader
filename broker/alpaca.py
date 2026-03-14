@@ -45,12 +45,20 @@ def get_account() -> dict:
     """Return Alpaca account info: cash, portfolio value, buying power, etc."""
     acct = _get_client().get_account()
     return {
+        "account_number": acct.account_number,
         "cash": float(acct.cash),
         "portfolio_value": float(acct.portfolio_value),
         "buying_power": float(acct.buying_power),
         "equity": float(acct.equity),
+        "long_market_value": float(acct.long_market_value),
+        "short_market_value": float(acct.short_market_value),
         "currency": acct.currency,
         "status": acct.status.value if acct.status else "UNKNOWN",
+        "pattern_day_trader": getattr(acct, "pattern_day_trader", False),
+        "daytrade_count": int(getattr(acct, "daytrade_count", 0)),
+        "trading_blocked": getattr(acct, "trading_blocked", False),
+        "paper": ALPACA_PAPER,
+        "created_at": acct.created_at.isoformat() if getattr(acct, "created_at", None) else None,
     }
 
 

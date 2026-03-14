@@ -366,6 +366,17 @@ async def api_token_costs():
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/api/alpaca/account")
+async def api_alpaca_account():
+    try:
+        from broker.alpaca import get_account, is_configured
+        if not is_configured():
+            return JSONResponse({"error": "Alpaca not configured"}, status_code=400)
+        return get_account()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 _company_name_cache: dict[str, str] = {}
 
 @app.get("/api/company/{ticker}")

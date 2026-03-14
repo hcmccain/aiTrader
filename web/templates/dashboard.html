@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Portfolio Trader v2.0</title>
+    <title>AI Portfolio Trader v3.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <style>
@@ -136,7 +136,7 @@
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v2.0</span></h1>
+                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v3.0</span></h1>
                 <p class="text-sm text-slate-400 mt-1">
                     Multi-agent simulation &middot; Built with Claude
                     <span id="marketStatus" class="ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
@@ -146,7 +146,20 @@
                     <span id="sseStatus" class="ml-1 text-[10px] text-slate-600"></span>
                 </p>
             </div>
-            <div class="flex gap-3">
+            <div class="flex items-center gap-3">
+                <!-- Alpaca Account -->
+                <div class="relative" id="alpacaWrap">
+                    <img src="/static/Alpaca.png" alt="Alpaca" onclick="toggleAlpacaPanel()" class="cursor-pointer hover:opacity-80 transition-opacity" style="height:36px;width:auto;" title="Alpaca Account">
+                    <div id="alpacaPanel" class="hidden absolute right-0 top-full mt-2 w-80 card z-40 shadow-xl" style="background:#1e293b;">
+                        <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+                            <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Alpaca Account</span>
+                            <span id="alpacaPaperBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-semibold hidden">PAPER</span>
+                        </div>
+                        <div id="alpacaBody" class="px-4 py-3 text-xs space-y-2">
+                            <p class="text-slate-500">Loading...</p>
+                        </div>
+                    </div>
+                </div>
                 <button onclick="runAllAgents()" id="runAllBtn" class="btn bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
                     Run All Agents
                 </button>
@@ -2389,6 +2402,52 @@
 
         function closeMtTrades() {
             document.getElementById('mtTradesModal').classList.add('hidden');
+        }
+
+        // ---- Alpaca Account Panel ----
+        let alpacaPanelOpen = false;
+        function toggleAlpacaPanel() {
+            alpacaPanelOpen = !alpacaPanelOpen;
+            document.getElementById('alpacaPanel').classList.toggle('hidden', !alpacaPanelOpen);
+            if (alpacaPanelOpen) loadAlpacaAccount();
+        }
+        document.addEventListener('click', e => {
+            if (alpacaPanelOpen && !document.getElementById('alpacaWrap').contains(e.target)) {
+                alpacaPanelOpen = false;
+                document.getElementById('alpacaPanel').classList.add('hidden');
+            }
+        });
+
+        async function loadAlpacaAccount() {
+            const body = document.getElementById('alpacaBody');
+            body.innerHTML = '<p class="text-slate-500">Loading...</p>';
+            try {
+                const res = await fetch('/api/alpaca/account');
+                const data = await res.json();
+                if (data.error) { body.innerHTML = `<p class="text-red-400">${data.error}</p>`; return; }
+
+                if (data.paper) document.getElementById('alpacaPaperBadge').classList.remove('hidden');
+
+                const statusColor = data.status === 'ACTIVE' ? 'text-emerald-400' : 'text-amber-400';
+                const fmt = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+
+                body.innerHTML = `
+                    <div class="flex justify-between"><span class="text-slate-400">Account</span><span class="text-slate-200 font-mono">${data.account_number || '--'}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Status</span><span class="${statusColor} font-semibold">${data.status}</span></div>
+                    <div class="border-t border-slate-700 my-1"></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Equity</span><span class="text-white font-semibold">${fmt(data.equity)}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Portfolio Value</span><span class="text-slate-200">${fmt(data.portfolio_value)}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Cash</span><span class="text-slate-200">${fmt(data.cash)}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Buying Power</span><span class="text-emerald-400 font-semibold">${fmt(data.buying_power)}</span></div>
+                    <div class="border-t border-slate-700 my-1"></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Long Value</span><span class="text-slate-200">${fmt(data.long_market_value)}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Short Value</span><span class="text-slate-200">${fmt(data.short_market_value)}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Day Trades</span><span class="text-slate-200">${data.daytrade_count}</span></div>
+                    ${data.trading_blocked ? '<div class="mt-1 text-red-400 font-semibold">Trading Blocked</div>' : ''}
+                    <div class="border-t border-slate-700 my-1"></div>
+                    <div class="text-center"><a href="https://app.alpaca.markets" target="_blank" rel="noopener" class="text-indigo-400 hover:text-indigo-300 font-medium">Go to Alpaca &rarr;</a></div>
+                `;
+            } catch(e) { body.innerHTML = `<p class="text-red-400">Failed to load: ${e.message}</p>`; }
         }
 
         // ---- Init ----
