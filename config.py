@@ -10,6 +10,9 @@ DB_PATH = BASE_DIR / "db" / "portfolio.db"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
 STARTING_CAPITAL = float(os.getenv("STARTING_CAPITAL", "100000"))
 
 # Schedule: 24-hour format, Eastern Time
@@ -28,3 +31,8 @@ MAX_DAILY_LOSS_PCT = float(os.getenv("MAX_DAILY_LOSS_PCT", "0.03"))
 # Web server
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
+
+# Alpaca broker
+ALPACA_API_KEY = os.getenv("ALPACA_API_KEY", "")
+ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
+ALPACA_PAPER = os.getenv("ALPACA_PAPER", "true").lower() == "true"

@@ -3,15 +3,31 @@ from datetime import datetime, date
 from portfolio import database as db
 from portfolio.models import AssetType, TradeAction, Position, PortfolioSummary
 from data.market import get_current_price, get_sp500_return_since, is_market_open
+from broker import alpaca as broker
 
 
 def initialize():
     db.init_db()
 
 
+def _asset_type_from_alpaca(asset_class: str) -> str:
+    """Map Alpaca asset_class strings to our AssetType values."""
+    mapping = {
+        "us_equity": "stock",
+        "us_option": "option",
+        "crypto": "stock",
+    }
+    return mapping.get(asset_class, "stock")
+
+
 def get_portfolio_summary(agent_id: int) -> PortfolioSummary:
-    cash = db.get_cash(agent_id)
     starting_capital = db.get_starting_capital(agent_id)
+    return _portfolio_from_db(agent_id, starting_capital)
+
+
+def _portfolio_from_db(agent_id: int, starting_capital: float) -> PortfolioSummary:
+    """Original DB-only portfolio summary (fallback when Alpaca is unavailable)."""
+    cash = db.get_cash(agent_id)
     raw_positions = db.get_positions(agent_id)
 
     positions: list[Position] = []
@@ -61,8 +77,6 @@ def get_portfolio_summary(agent_id: int) -> PortfolioSummary:
         daily_return = total_value - prev_value
         daily_return_pct = (daily_return / prev_value * 100) if prev_value > 0 else 0.0
 
-        # If daily return is negative but we have positive realized P&L today, option
-        # prices from yfinance may be stale. Use realized P&L as daily return instead.
         realized_today = db.get_realized_pnl_today(agent_id)
         if realized_today is not None and daily_return < 0 < realized_today:
             daily_return = realized_today
@@ -104,8 +118,8 @@ def validate_trade(
     max_options_pct = risk["max_options_pct"]
     min_cash_reserve_pct = risk["min_cash_reserve_pct"]
 
-    cash = db.get_cash(agent_id)
     summary = get_portfolio_summary(agent_id)
+    cash = summary.cash
     total_value = summary.total_value
     multiplier = 100 if asset_type == AssetType.OPTION else 1
     total_cost = price * quantity * multiplier
@@ -115,10 +129,13 @@ def validate_trade(
         if cash - total_cost < min_cash:
             return False, f"Trade would leave cash below minimum reserve ({min_cash_reserve_pct*100:.0f}% = ${min_cash:.2f})"
 
-        existing = db.get_position(agent_id, symbol, asset_type.value)
-        existing_value = (existing["quantity"] * price) if existing else 0.0
+        existing_value = 0.0
+        for p in summary.positions:
+            if p.symbol == symbol:
+                existing_value = p.market_value
+                break
         new_position_value = existing_value + total_cost
-        if new_position_value / total_value > max_position_pct:
+        if total_value > 0 and new_position_value / total_value > max_position_pct:
             return False, f"Position would exceed max single position size ({max_position_pct*100:.0f}%)"
 
         import re as _re
@@ -166,15 +183,19 @@ def validate_trade(
             options_value = sum(
                 p.market_value for p in summary.positions if p.asset_type == AssetType.OPTION
             )
-            if (options_value + total_cost) / total_value > max_options_pct:
+            if total_value > 0 and (options_value + total_cost) / total_value > max_options_pct:
                 return False, f"Options allocation would exceed max ({max_options_pct*100:.0f}%)"
 
     elif action == TradeAction.SELL:
-        existing = db.get_position(agent_id, symbol, asset_type.value)
-        if not existing:
+        held = None
+        for p in summary.positions:
+            if p.symbol == symbol:
+                held = p
+                break
+        if not held:
             return False, f"No existing position in {symbol} to sell"
-        if existing["quantity"] < quantity:
-            return False, f"Cannot sell {quantity} shares — only hold {existing['quantity']}"
+        if held.quantity < quantity:
+            return False, f"Cannot sell {quantity} shares — only hold {held.quantity}"
 
     return True, "OK"
 
@@ -188,11 +209,106 @@ def execute_trade(
     price: float,
     reasoning: str = "",
 ) -> tuple[bool, str]:
-    """Execute a paper trade. Returns (success, message)."""
+    """Execute a trade via Alpaca (or simulated if Alpaca is not configured).
+    Returns (success, message)."""
     is_valid, reason = validate_trade(agent_id, symbol, asset_type, action, quantity, price)
     if not is_valid:
         return False, reason
 
+    if broker.is_configured():
+        return _execute_via_alpaca(agent_id, symbol, asset_type, action, quantity, price, reasoning)
+
+    return _execute_simulated(agent_id, symbol, asset_type, action, quantity, price, reasoning)
+
+
+def _execute_via_alpaca(
+    agent_id: int,
+    symbol: str,
+    asset_type: AssetType,
+    action: TradeAction,
+    quantity: float,
+    price: float,
+    reasoning: str,
+) -> tuple[bool, str]:
+    """Submit a market order to Alpaca and update the agent's local ledger."""
+    multiplier = 100 if asset_type == AssetType.OPTION else 1
+    estimated_cost = price * quantity * multiplier
+
+    if action == TradeAction.BUY:
+        try:
+            account = broker.get_account()
+            if estimated_cost > account["buying_power"]:
+                return False, f"Trade (${estimated_cost:.2f}) exceeds Alpaca buying power (${account['buying_power']:.2f})"
+        except Exception as e:
+            return False, f"Cannot verify Alpaca buying power: {e}"
+
+    try:
+        result = broker.submit_market_order(
+            symbol=symbol,
+            qty=quantity,
+            side=action.value,
+            agent_id=agent_id,
+        )
+    except Exception as e:
+        return False, f"Alpaca order failed: {e}"
+
+    if result["status"] != "filled":
+        return False, f"Order not filled: {result.get('error', result['status'])}"
+
+    filled_price = result["filled_avg_price"]
+    filled_qty = result["qty"]
+    total_cost = filled_price * filled_qty * multiplier
+    cash = db.get_cash(agent_id)
+
+    if action == TradeAction.BUY:
+        db.update_cash(agent_id, cash - total_cost)
+
+        existing = db.get_position(agent_id, symbol, asset_type.value)
+        if existing:
+            old_cost = existing["quantity"] * existing["avg_cost"]
+            new_cost = old_cost + (filled_price * filled_qty)
+            new_quantity = existing["quantity"] + filled_qty
+            new_avg_cost = new_cost / new_quantity
+            db.upsert_position(agent_id, symbol, asset_type.value, new_quantity, new_avg_cost)
+        else:
+            db.upsert_position(agent_id, symbol, asset_type.value, filled_qty, filled_price)
+
+        db.insert_trade(
+            agent_id, symbol, asset_type.value, action.value,
+            filled_qty, filled_price, total_cost, reasoning,
+            realized_pnl=0, avg_cost_basis=round(filled_price, 4),
+        )
+        return True, f"Bought {filled_qty} {symbol} at ${filled_price:.2f} (total: ${total_cost:.2f}) [Alpaca filled]"
+
+    elif action == TradeAction.SELL:
+        db.update_cash(agent_id, cash + total_cost)
+
+        existing = db.get_position(agent_id, symbol, asset_type.value)
+        avg_cost_basis = existing["avg_cost"] if existing else filled_price
+        new_quantity = (existing["quantity"] - filled_qty) if existing else 0
+        db.upsert_position(agent_id, symbol, asset_type.value, new_quantity, avg_cost_basis)
+
+        realized_pnl = (filled_price - avg_cost_basis) * filled_qty * multiplier
+        db.insert_trade(
+            agent_id, symbol, asset_type.value, action.value,
+            filled_qty, filled_price, total_cost, reasoning,
+            realized_pnl=round(realized_pnl, 2), avg_cost_basis=round(avg_cost_basis, 4),
+        )
+        return True, f"Sold {filled_qty} {symbol} at ${filled_price:.2f} (P&L: ${realized_pnl:+.2f}) [Alpaca filled]"
+
+    return False, "Unknown action"
+
+
+def _execute_simulated(
+    agent_id: int,
+    symbol: str,
+    asset_type: AssetType,
+    action: TradeAction,
+    quantity: float,
+    price: float,
+    reasoning: str,
+) -> tuple[bool, str]:
+    """Original simulated (paper) trade execution when Alpaca is not configured."""
     multiplier = 100 if asset_type == AssetType.OPTION else 1
     total_cost = price * quantity * multiplier
     cash = db.get_cash(agent_id)
@@ -269,5 +385,4 @@ def take_intraday_snapshot(agent_id: int, session_phase: str = ""):
         num_positions=summary.num_positions,
         session_phase=session_phase,
     )
-    # Also update the daily snapshot so it always reflects the latest value
     take_daily_snapshot(agent_id)

@@ -50,6 +50,85 @@
         .tf-btn { background: #334155; color: #94a3b8; cursor: pointer; transition: all 0.1s ease; }
         .tf-btn:hover { background: #475569; color: #e2e8f0; }
         .tf-btn.active { background: #4f46e5; color: #fff; }
+
+        .tip-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            cursor: help;
+            color: #475569;
+            transition: color 0.15s;
+        }
+        .tip-wrap:hover { color: #818cf8; }
+        .tip-bubble {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            right: 0;
+            bottom: calc(100% + 10px);
+            width: 280px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            box-shadow: 0 12px 32px rgba(0,0,0,.5);
+            color: #cbd5e1;
+            font-size: 12px;
+            font-weight: 400;
+            line-height: 1.55;
+            z-index: 300;
+            pointer-events: none;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .tip-bubble::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            right: 3px;
+            border: 6px solid transparent;
+            border-top-color: #334155;
+        }
+        .tip-bubble.tip-left {
+            right: auto;
+            left: 0;
+        }
+        .tip-bubble.tip-left::after {
+            right: auto;
+            left: 3px;
+        }
+        .tip-wrap:hover .tip-bubble {
+            visibility: visible;
+            opacity: 1;
+        }
+        .tip-bubble strong {
+            display: block;
+            color: #e2e8f0;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        .tip-bubble .tip-example {
+            display: block;
+            margin-top: 8px;
+            padding: 7px 10px;
+            border-radius: 5px;
+            background: #0f172a;
+            color: #94a3b8;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+        .tab-btn { padding: 8px 20px; font-size: 13px; font-weight: 600; color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.15s ease; cursor: pointer; background: none; }
+        .tab-btn:hover { color: #e2e8f0; }
+        .tab-btn.active { color: #818cf8; border-bottom-color: #818cf8; }
+        .section-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .section-ce { background: #1e3a5f; color: #60a5fa; }
+        .section-ee { background: #3b1f4e; color: #c084fc; }
+        .section-cc { background: #1a3a2a; color: #4ade80; }
+        .section-ec { background: #3a2a1a; color: #fbbf24; }
+        .matrix-table th { cursor: pointer; user-select: none; }
+        .matrix-table th:hover { color: #e2e8f0; }
+        .matrix-table td, .matrix-table th { padding: 8px 10px; text-align: left; font-size: 12px; }
+        .matrix-table tr { border-bottom: 1px solid #1e293b; }
+        .matrix-table tbody tr:hover { background: #1e293b; }
     </style>
 </head>
 <body class="min-h-screen">
@@ -77,27 +156,40 @@
             </div>
         </div>
 
+        <!-- Tab Bar -->
+        <div class="flex gap-1 border-b border-slate-700 mb-6">
+            <button class="tab-btn active" id="tabBtnDashboard" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="tab-btn" id="tabBtnModelTesting" onclick="switchTab('modelTesting')">Model Testing</button>
+        </div>
+
+        <!-- ===== TAB: DASHBOARD ===== -->
+        <div id="tab-dashboard">
+
         <!-- Token Cost Bar -->
         <div id="tokenCostBar" class="mb-4">
-            <div class="card px-4 py-2.5 flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">API Token Cost</span>
-                <div class="flex items-center gap-6 text-sm">
-                    <div class="flex items-center gap-1.5">
-                        <span class="text-slate-500 text-xs">Today</span>
-                        <span id="costToday" class="font-mono font-semibold text-amber-400">$0.00</span>
+            <div class="card px-4 py-2.5">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">API Token Cost</span>
+                    <div class="flex items-center gap-6 text-sm">
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-slate-500 text-xs">Today</span>
+                            <span id="costToday" class="font-mono font-semibold text-amber-400">$0.00</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-slate-500 text-xs">Week</span>
+                            <span id="costWeek" class="font-mono font-semibold text-amber-400">$0.00</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-slate-500 text-xs">Month</span>
+                            <span id="costMonth" class="font-mono font-semibold text-amber-400">$0.00</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-slate-500 text-xs">Lifetime</span>
+                            <span id="costLifetime" class="font-mono font-semibold text-amber-300">$0.00</span>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-1.5">
-                        <span class="text-slate-500 text-xs">Week</span>
-                        <span id="costWeek" class="font-mono font-semibold text-amber-400">$0.00</span>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                        <span class="text-slate-500 text-xs">Month</span>
-                        <span id="costMonth" class="font-mono font-semibold text-amber-400">$0.00</span>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                        <span class="text-slate-500 text-xs">Lifetime</span>
-                        <span id="costLifetime" class="font-mono font-semibold text-amber-300">$0.00</span>
-                    </div>
+                </div>
+                <div id="costByModel" class="hidden mt-2 pt-2 border-t border-slate-700/50 flex items-center gap-4 flex-wrap">
                 </div>
             </div>
         </div>
@@ -351,6 +443,127 @@
         <div class="text-center text-xs text-slate-600 py-4">
             Paper trading simulation &middot; Not financial advice &middot; All trades are fictitious
         </div>
+
+        </div><!-- END tab-dashboard -->
+
+        <!-- ===== TAB: MODEL TESTING ===== -->
+        <div id="tab-modelTesting" class="hidden">
+
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-white">Model Testing Arena</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Compare all scout/decision model combinations side-by-side</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <select id="mtTestGroup" class="input-field text-sm py-1.5 px-3" onchange="loadTestMatrix(this.value)" style="min-width:180px">
+                        <option value="">No test groups</option>
+                    </select>
+                    <button onclick="generateTestMatrix()" id="mtGenerateBtn" class="btn bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                        Generate All 64 Agents
+                    </button>
+                    <button onclick="deleteTestMatrix()" id="mtDeleteBtn" class="btn bg-red-600/80 hover:bg-red-500 text-white px-3 py-2 rounded-lg text-sm font-medium hidden">
+                        Delete Matrix
+                    </button>
+                </div>
+            </div>
+
+            <!-- Summary Stats -->
+            <div id="mtSummary" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 hidden">
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">Agents</div>
+                    <div class="text-lg font-bold text-white" id="mtAgentCount">0</div>
+                </div>
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">Best Return</div>
+                    <div class="text-lg font-bold stat-positive" id="mtBestReturn">--</div>
+                    <div class="text-xs text-slate-500" id="mtBestAgent">--</div>
+                </div>
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">Worst Return</div>
+                    <div class="text-lg font-bold stat-negative" id="mtWorstReturn">--</div>
+                    <div class="text-xs text-slate-500" id="mtWorstAgent">--</div>
+                </div>
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">Total Trades</div>
+                    <div class="text-lg font-bold text-white" id="mtTotalTrades">0</div>
+                </div>
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">Total API Cost</div>
+                    <div class="text-lg font-bold text-amber-400" id="mtTotalCost">$0</div>
+                </div>
+            </div>
+
+            <!-- Section Filters -->
+            <div class="flex flex-wrap gap-2 mb-4" id="mtFilters">
+                <button class="section-badge section-ce mt-filter active" onclick="toggleMtFilter(this,'ce')" data-section="ce">Cheap Scout + Expensive Decision</button>
+                <button class="section-badge section-ee mt-filter active" onclick="toggleMtFilter(this,'ee')" data-section="ee">Expensive Scout + Expensive Decision</button>
+                <button class="section-badge section-cc mt-filter active" onclick="toggleMtFilter(this,'cc')" data-section="cc">Cheap Scout + Cheap Decision</button>
+                <button class="section-badge section-ec mt-filter active" onclick="toggleMtFilter(this,'ec')" data-section="ec">Expensive Scout + Cheap Decision</button>
+            </div>
+
+            <!-- Equity Curve Chart -->
+            <div class="card p-4 mb-4" id="mtChartCard" style="display:none">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-slate-300">Equity Curves — Return %</h3>
+                    <div class="flex gap-2">
+                        <button class="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600" onclick="setMtChartMode('top10')">Top/Bottom 5</button>
+                        <button class="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600" onclick="setMtChartMode('all')">Show All</button>
+                    </div>
+                </div>
+                <div style="height:350px"><canvas id="mtEquityChart"></canvas></div>
+            </div>
+
+            <!-- Comparison Table -->
+            <div class="card overflow-x-auto" id="mtTableCard" style="display:none">
+                <table class="matrix-table w-full">
+                    <thead>
+                        <tr class="text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700">
+                            <th onclick="sortMtTable('rank')">#</th>
+                            <th onclick="sortMtTable('section')">Section</th>
+                            <th onclick="sortMtTable('scout_short')">Scout</th>
+                            <th onclick="sortMtTable('decision_short')">Decision</th>
+                            <th onclick="sortMtTable('total_return_pct')">Total Return</th>
+                            <th onclick="sortMtTable('daily_return_pct')">Daily Return</th>
+                            <th onclick="sortMtTable('total_trades')">Trades</th>
+                            <th onclick="sortMtTable('win_rate')">Win Rate</th>
+                            <th onclick="sortMtTable('api_cost')">API Cost</th>
+                            <th onclick="sortMtTable('roi_net')">Net ROI</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mtTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Empty State -->
+            <div id="mtEmpty" class="card p-12 text-center">
+                <p class="text-slate-400 text-lg mb-2">No test matrix created yet</p>
+                <p class="text-slate-500 text-sm mb-4">Click "Generate All 64 Agents" to create all scout/decision model combinations</p>
+            </div>
+
+        </div><!-- END tab-modelTesting -->
+
+        <!-- Agent Trades Modal -->
+        <div id="mtTradesModal" class="fixed inset-0 z-50 hidden">
+            <div class="modal-overlay absolute inset-0" onclick="closeMtTrades()"></div>
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+                <div class="card relative z-10 w-full max-w-3xl max-h-[80vh] flex flex-col" style="background:#1e293b;">
+                    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-700">
+                        <div>
+                            <h3 class="text-sm font-semibold text-white" id="mtTradesTitle">Agent Trades</h3>
+                            <p class="text-xs text-slate-400 mt-0.5" id="mtTradesSubtitle"></p>
+                        </div>
+                        <button onclick="closeMtTrades()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+                    </div>
+                    <div class="overflow-y-auto flex-1 px-5 py-3" id="mtTradesBody">
+                        <p class="text-slate-500 text-sm">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- Agent Modal -->
@@ -418,27 +631,180 @@
                     <p class="text-xs text-slate-500 mt-1.5">Select at least one type. The agent will only trade the selected instruments.</p>
                 </div>
 
+                <div class="mb-5">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-xs text-slate-400 uppercase tracking-wider" for="modalModel">Decision Model</label>
+                        <span class="tip-wrap">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            <span class="tip-bubble" style="width:320px">
+                                <strong>Decision Model (Deep)</strong><br>
+                                The model that sets portfolio strategy and reviews trade proposals from the scout. Used for high-level reasoning — runs less frequently.<br><br>
+                                <strong>Sonnet / GPT-4o</strong> — Good balance of quality and cost.<br>
+                                <strong>Opus / Gemini Pro</strong> — Best reasoning for complex strategies.<br>
+                                <span class="tip-example">Tip: Use a premium model here — it only runs once per strategy refresh and once per review, so cost is minimal.</span>
+                            </span>
+                        </span>
+                    </div>
+                    <select id="modalModel" class="input-field text-sm">
+                        <optgroup label="Anthropic (Claude)">
+                            <option value="claude-sonnet-4-20250514">Claude Sonnet 4 — Balanced (recommended)</option>
+                            <option value="claude-haiku-4-20250414">Claude Haiku 4 — Fast & affordable</option>
+                            <option value="claude-opus-4-20250514">Claude Opus 4 — Maximum reasoning</option>
+                        </optgroup>
+                        <optgroup label="OpenAI">
+                            <option value="gpt-4o">GPT-4o — Strong all-rounder</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini — Fast & affordable</option>
+                            <option value="o3-mini">o3-mini — Advanced reasoning</option>
+                        </optgroup>
+                        <optgroup label="Google">
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro — Deep reasoning</option>
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash — Fast & affordable</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div class="mb-5">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-xs text-slate-400 uppercase tracking-wider" for="modalScoutModel">Scout Model</label>
+                        <span class="tip-wrap">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            <span class="tip-bubble" style="width:320px">
+                                <strong>Scout Model (Fast)</strong><br>
+                                The model that runs every check-in to gather market data, analyze opportunities, and propose trades. Uses the most tokens since it calls tools repeatedly.<br><br>
+                                <strong>Haiku / Mini / Flash</strong> — Recommended. Cheap enough for frequent check-ins.<br>
+                                <strong>Sonnet / GPT-4o</strong> — Better analysis but 5-10x more expensive per session.<br>
+                                <span class="tip-example">Tip: Use Haiku or GPT-4o Mini here. The scout does research — the decision model handles quality control.</span>
+                            </span>
+                        </span>
+                    </div>
+                    <select id="modalScoutModel" class="input-field text-sm">
+                        <optgroup label="Anthropic (Claude)">
+                            <option value="claude-haiku-4-20250414">Claude Haiku 4 — Fast & affordable (recommended)</option>
+                            <option value="claude-sonnet-4-20250514">Claude Sonnet 4 — Balanced</option>
+                            <option value="claude-opus-4-20250514">Claude Opus 4 — Maximum reasoning</option>
+                        </optgroup>
+                        <optgroup label="OpenAI">
+                            <option value="gpt-4o-mini">GPT-4o Mini — Fast & affordable (recommended)</option>
+                            <option value="gpt-4o">GPT-4o — Strong all-rounder</option>
+                            <option value="o3-mini">o3-mini — Advanced reasoning</option>
+                        </optgroup>
+                        <optgroup label="Google">
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash — Fast & affordable (recommended)</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro — Deep reasoning</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div class="mb-5">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="text-xs text-slate-400 uppercase tracking-wider" for="modalCheckInterval">Check-in Interval</label>
+                                <span class="tip-wrap">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span class="tip-bubble tip-left" style="width:260px">
+                                        <strong>Check-in Interval</strong><br>
+                                        How often (in minutes) the scout model checks the market and proposes trades. Lower = more responsive but higher cost.<br>
+                                        <span class="tip-example">Example: 5 min = ~78 sessions/day. At ~$0.03/session with Haiku, that's ~$2.34/day.</span>
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="modalCheckInterval" class="input-field text-sm" value="15" min="2" max="60" step="1">
+                                <span class="text-xs text-slate-500 whitespace-nowrap">min</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="text-xs text-slate-400 uppercase tracking-wider" for="modalStrategyInterval">Strategy Refresh</label>
+                                <span class="tip-wrap">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span class="tip-bubble" style="width:260px">
+                                        <strong>Strategy Refresh Interval</strong><br>
+                                        How often (in minutes) the decision model re-evaluates portfolio strategy. The scout follows this strategy between refreshes.<br>
+                                        <span class="tip-example">Example: 60 min = decision model runs ~7 times/day. Keeps strategy current without excess cost.</span>
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="modalStrategyInterval" class="input-field text-sm" value="60" min="15" max="240" step="15">
+                                <span class="text-xs text-slate-500 whitespace-nowrap">min</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <details class="mb-4">
                     <summary class="text-xs text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300 mb-2">Advanced Settings</summary>
                     <div class="grid grid-cols-2 gap-3 mt-2">
                         <div>
-                            <label class="text-xs text-slate-500 block mb-1">Max Single Position %</label>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-xs text-slate-500" for="modalMaxPos">Max Single Position %</label>
+                                <span class="tip-wrap">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span class="tip-bubble tip-left">
+                                        <strong>Max Single Position %</strong><br>
+                                        The largest share of your total portfolio that can go into any one stock, ETF, or options contract. Prevents the agent from concentrating too much in a single bet.<br>
+                                        <span class="tip-example">Example: Set to 15% on a $100K portfolio — the agent will never put more than $15K into one position.</span>
+                                    </span>
+                                </span>
+                            </div>
                             <input type="number" id="modalMaxPos" class="input-field text-sm" min="1" max="100">
                         </div>
                         <div>
-                            <label class="text-xs text-slate-500 block mb-1">Max Options %</label>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-xs text-slate-500" for="modalMaxOpt">Max Options %</label>
+                                <span class="tip-wrap">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span class="tip-bubble">
+                                        <strong>Max Options %</strong><br>
+                                        The maximum percentage of your portfolio that can be in options contracts (calls &amp; puts) at any time. Options are higher-risk, so this cap limits exposure.<br>
+                                        <span class="tip-example">Example: Set to 20% on a $50K portfolio — no more than $10K will be in options at once.</span>
+                                    </span>
+                                </span>
+                            </div>
                             <input type="number" id="modalMaxOpt" class="input-field text-sm" min="0" max="100">
                         </div>
                         <div>
-                            <label class="text-xs text-slate-500 block mb-1">Min Cash Reserve %</label>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-xs text-slate-500" for="modalMinCash">Min Cash Reserve %</label>
+                                <span class="tip-wrap">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span class="tip-bubble tip-left">
+                                        <strong>Min Cash Reserve %</strong><br>
+                                        The minimum percentage of your portfolio that must stay as uninvested cash. Ensures the agent always keeps dry powder for new opportunities or market dips.<br>
+                                        <span class="tip-example">Example: Set to 10% on a $100K portfolio — the agent always keeps at least $10K in cash.</span>
+                                    </span>
+                                </span>
+                            </div>
                             <input type="number" id="modalMinCash" class="input-field text-sm" min="0" max="50">
                         </div>
                         <div>
-                            <label class="text-xs text-slate-500 block mb-1">Max Daily Loss %</label>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-xs text-slate-500" for="modalMaxLoss">Max Daily Loss %</label>
+                                <span class="tip-wrap">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span class="tip-bubble">
+                                        <strong>Max Daily Loss %</strong><br>
+                                        The maximum portfolio loss tolerated in a single day. Once this threshold is hit, the agent stops opening new positions for the rest of the session.<br>
+                                        <span class="tip-example">Example: Set to 3% on a $100K portfolio — if losses reach $3K in one day, trading pauses until the next session.</span>
+                                    </span>
+                                </span>
+                            </div>
                             <input type="number" id="modalMaxLoss" class="input-field text-sm" min="0.5" max="20" step="0.5">
                         </div>
                         <div class="col-span-2">
-                            <label class="text-xs text-slate-500 block mb-1">Max Daily Investment %</label>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-xs text-slate-500" for="modalMaxDailyInv">Max Daily Investment %</label>
+                                <span class="tip-wrap">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span class="tip-bubble">
+                                        <strong>Max Daily Investment %</strong><br>
+                                        The max percentage of portfolio value the agent can deploy into new positions in a single day. Spreads entries over multiple sessions to reduce timing risk.<br>
+                                        <span class="tip-example">Example: Set to 25% on a $100K portfolio — up to $25K in new positions per day.</span>
+                                    </span>
+                                </span>
+                            </div>
                             <input type="number" id="modalMaxDailyInv" class="input-field text-sm" min="5" max="100" step="5">
                         </div>
                     </div>
@@ -1122,6 +1488,10 @@
                 document.getElementById('modalMinCash').value = agent.min_cash_reserve_pct;
                 document.getElementById('modalMaxLoss').value = agent.max_daily_loss_pct;
                 document.getElementById('modalMaxDailyInv').value = agent.max_daily_investment_pct;
+                document.getElementById('modalModel').value = agent.model || 'claude-sonnet-4-20250514';
+                document.getElementById('modalScoutModel').value = agent.scout_model || 'claude-haiku-4-20250414';
+                document.getElementById('modalCheckInterval').value = agent.check_interval_minutes || 15;
+                document.getElementById('modalStrategyInterval').value = agent.strategy_interval_minutes || 60;
                 setModalAssetTypes(agent.allowed_asset_types || ['stock','etf','mutual_fund','commodity','option']);
             } else {
                 document.getElementById('modalTitle').textContent = 'New Agent';
@@ -1131,6 +1501,10 @@
                 document.getElementById('modalCapital').disabled = false;
                 onModalRiskChange(5);
                 document.getElementById('modalRiskSlider').value = 5;
+                document.getElementById('modalModel').value = 'claude-sonnet-4-20250514';
+                document.getElementById('modalScoutModel').value = 'claude-haiku-4-20250414';
+                document.getElementById('modalCheckInterval').value = 15;
+                document.getElementById('modalStrategyInterval').value = 60;
                 setModalAssetTypes(['stock','etf','mutual_fund','commodity','option']);
             }
         }
@@ -1167,6 +1541,10 @@
                 max_daily_loss_pct: parseFloat(document.getElementById('modalMaxLoss').value),
                 max_daily_investment_pct: parseFloat(document.getElementById('modalMaxDailyInv').value),
                 allowed_asset_types: allowedTypes,
+                model: document.getElementById('modalModel').value,
+                scout_model: document.getElementById('modalScoutModel').value,
+                check_interval_minutes: parseInt(document.getElementById('modalCheckInterval').value),
+                strategy_interval_minutes: parseInt(document.getElementById('modalStrategyInterval').value),
             };
 
             try {
@@ -1511,6 +1889,17 @@
         }
 
         // ---- Token Costs ----
+        const MODEL_LABELS = {
+            'claude-sonnet-4-20250514': 'Sonnet 4',
+            'claude-haiku-4-20250414': 'Haiku 4',
+            'claude-opus-4-20250514': 'Opus 4',
+            'gpt-4o': 'GPT-4o',
+            'gpt-4o-mini': 'GPT-4o Mini',
+            'o3-mini': 'o3-mini',
+            'gemini-2.5-pro': 'Gemini 2.5 Pro',
+            'gemini-2.5-flash': 'Gemini 2.5 Flash',
+        };
+
         async function loadTokenCosts() {
             try {
                 const data = await (await fetch('/api/token-costs')).json();
@@ -1519,6 +1908,19 @@
                 document.getElementById('costWeek').textContent = fmtCost(data.week.cost);
                 document.getElementById('costMonth').textContent = fmtCost(data.month.cost);
                 document.getElementById('costLifetime').textContent = fmtCost(data.lifetime.cost);
+
+                const container = document.getElementById('costByModel');
+                const models = data.by_model_today || [];
+                if (models.length > 0) {
+                    container.classList.remove('hidden');
+                    container.innerHTML = '<span class="text-xs text-slate-500">Today by model:</span>' +
+                        models.map(m => {
+                            const label = MODEL_LABELS[m.model] || m.model;
+                            return `<span class="text-xs"><span class="text-slate-400">${label}</span> <span class="font-mono text-amber-400/80">${fmtCost(m.cost)}</span> <span class="text-slate-600">(${m.calls} calls)</span></span>`;
+                        }).join('');
+                } else {
+                    container.classList.add('hidden');
+                }
             } catch (err) {
                 console.warn('Token cost error:', err);
             }
@@ -1528,6 +1930,313 @@
         function exportTrades(format) {
             if (!selectedAgentId) return;
             window.open(`/api/agents/${selectedAgentId}/export/${format}`, '_blank');
+        }
+
+        // ---- Tab Navigation ----
+        function switchTab(tab) {
+            document.getElementById('tab-dashboard').classList.toggle('hidden', tab !== 'dashboard');
+            document.getElementById('tab-modelTesting').classList.toggle('hidden', tab !== 'modelTesting');
+            document.getElementById('tabBtnDashboard').classList.toggle('active', tab === 'dashboard');
+            document.getElementById('tabBtnModelTesting').classList.toggle('active', tab === 'modelTesting');
+            if (tab === 'modelTesting') loadTestMatrix();
+        }
+
+        // ---- Model Testing ----
+        let mtData = [];
+        let mtSortKey = 'total_return_pct';
+        let mtSortAsc = false;
+        let mtActiveFilters = new Set(['ce','ee','cc','ec']);
+        let mtEquityChart = null;
+        let mtChartMode = 'top10';
+
+        const SECTION_MAP = {
+            'Cheap Scout + Expensive Decision': 'ce',
+            'Expensive Scout + Expensive Decision': 'ee',
+            'Cheap Scout + Cheap Decision': 'cc',
+            'Expensive Scout + Cheap Decision': 'ec',
+        };
+        const SECTION_CLASS = { ce:'section-ce', ee:'section-ee', cc:'section-cc', ec:'section-ec' };
+        const SECTION_LABELS = { ce:'Cheap/Exp', ee:'Exp/Exp', cc:'Cheap/Cheap', ec:'Exp/Cheap' };
+        const SECTION_COLORS = { ce:'#60a5fa', ee:'#c084fc', cc:'#4ade80', ec:'#fbbf24' };
+
+        async function generateTestMatrix() {
+            const btn = document.getElementById('mtGenerateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            try {
+                const res = await fetch('/api/agents/generate-test-matrix', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        starting_capital: 10000,
+                        risk_level: 5,
+                        check_interval_minutes: 5,
+                        strategy_interval_minutes: 60,
+                    }),
+                });
+                const data = await res.json();
+                if (data.error) { showToast(data.error, 'error'); return; }
+                showToast(`Created ${data.created} agents (${data.skipped} already existed)`);
+                await loadTestMatrix(data.test_group);
+            } catch(e) { showToast('Failed: '+e.message, 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Generate All 64 Agents'; }
+        }
+
+        async function deleteTestMatrix() {
+            const sel = document.getElementById('mtTestGroup');
+            const group = sel.value;
+            if (!group) return;
+            if (!confirm(`Delete all agents in test group "${group}"?`)) return;
+            try {
+                const res = await fetch(`/api/test-matrix/${encodeURIComponent(group)}`, {method:'DELETE'});
+                const data = await res.json();
+                showToast(`Deleted ${data.deleted} agents`);
+                await loadTestMatrix();
+            } catch(e) { showToast('Failed: '+e.message, 'error'); }
+        }
+
+        async function loadTestMatrix(group) {
+            try {
+                let url = '/api/test-matrix';
+                if (group) url += `?test_group=${encodeURIComponent(group)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                const sel = document.getElementById('mtTestGroup');
+                sel.innerHTML = (data.test_groups || []).map(g =>
+                    `<option value="${g}" ${g===data.test_group?'selected':''}>${g}</option>`
+                ).join('') || '<option value="">No test groups</option>';
+
+                mtData = data.agents || [];
+                const hasData = mtData.length > 0;
+
+                document.getElementById('mtEmpty').style.display = hasData ? 'none' : '';
+                document.getElementById('mtSummary').classList.toggle('hidden', !hasData);
+                document.getElementById('mtTableCard').style.display = hasData ? '' : 'none';
+                document.getElementById('mtChartCard').style.display = hasData ? '' : 'none';
+                document.getElementById('mtDeleteBtn').classList.toggle('hidden', !hasData);
+
+                if (hasData) {
+                    updateMtSummary();
+                    renderMtTable();
+                    loadMtSnapshots(data.test_group);
+                }
+            } catch(e) { console.warn('loadTestMatrix error:', e); }
+        }
+
+        function updateMtSummary() {
+            document.getElementById('mtAgentCount').textContent = mtData.length;
+            const sorted = [...mtData].sort((a,b) => b.total_return_pct - a.total_return_pct);
+            const best = sorted[0];
+            const worst = sorted[sorted.length - 1];
+            document.getElementById('mtBestReturn').textContent = pct(best?.total_return_pct);
+            document.getElementById('mtBestAgent').textContent = best?.name || '--';
+            document.getElementById('mtWorstReturn').textContent = pct(worst?.total_return_pct);
+            document.getElementById('mtWorstReturn').className = `text-lg font-bold ${worst && worst.total_return_pct >= 0 ? 'stat-positive' : 'stat-negative'}`;
+            document.getElementById('mtWorstAgent').textContent = worst?.name || '--';
+            document.getElementById('mtTotalTrades').textContent = mtData.reduce((s,a) => s + a.total_trades, 0);
+            document.getElementById('mtTotalCost').textContent = '$' + mtData.reduce((s,a) => s + a.api_cost, 0).toFixed(2);
+        }
+
+        function renderMtTable() {
+            const filtered = mtData.filter(a => mtActiveFilters.has(SECTION_MAP[a.section]));
+            const sorted = [...filtered].sort((a,b) => {
+                let va = a[mtSortKey], vb = b[mtSortKey];
+                if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+                return mtSortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+            });
+
+            const tbody = document.getElementById('mtTableBody');
+            tbody.innerHTML = sorted.map((a, i) => {
+                const sc = SECTION_MAP[a.section] || 'ce';
+                const retClass = a.total_return_pct >= 0 ? 'stat-positive' : 'stat-negative';
+                const dayClass = a.daily_return_pct >= 0 ? 'stat-positive' : 'stat-negative';
+                const netClass = a.roi_net >= 0 ? 'stat-positive' : 'stat-negative';
+                return `<tr>
+                    <td class="text-slate-500">${i+1}</td>
+                    <td><span class="section-badge ${SECTION_CLASS[sc]}">${SECTION_LABELS[sc]}</span></td>
+                    <td class="text-slate-300 font-medium">${esc(a.scout_short)}</td>
+                    <td class="text-slate-300 font-medium">${esc(a.decision_short)}</td>
+                    <td class="${retClass} font-semibold">${pct(a.total_return_pct)}</td>
+                    <td class="${dayClass}">${pct(a.daily_return_pct)}</td>
+                    <td class="text-slate-400">${a.total_trades}</td>
+                    <td class="text-slate-400">${a.win_rate.toFixed(1)}%</td>
+                    <td class="text-amber-400/80 font-mono text-xs">$${a.api_cost.toFixed(2)}</td>
+                    <td class="${netClass} font-mono text-xs">$${a.roi_net.toFixed(2)}</td>
+                    <td>${a.is_active ? '<span class="text-emerald-400 text-xs">Active</span>' : '<span class="text-slate-500 text-xs">Paused</span>'}</td>
+                    <td><button onclick="openMtTrades(${a.id}, '${esc(a.name)}')" class="text-xs text-indigo-400 hover:text-indigo-300 underline">Trades</button></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function sortMtTable(key) {
+            if (mtSortKey === key) mtSortAsc = !mtSortAsc;
+            else { mtSortKey = key; mtSortAsc = false; }
+            renderMtTable();
+        }
+
+        function toggleMtFilter(btn, section) {
+            if (mtActiveFilters.has(section)) {
+                mtActiveFilters.delete(section);
+                btn.style.opacity = '0.3';
+            } else {
+                mtActiveFilters.add(section);
+                btn.style.opacity = '1';
+            }
+            renderMtTable();
+            updateMtChart();
+        }
+
+        function setMtChartMode(mode) {
+            mtChartMode = mode;
+            updateMtChart();
+        }
+
+        async function loadMtSnapshots(testGroup) {
+            try {
+                let url = '/api/test-matrix/snapshots';
+                if (testGroup) url += `?test_group=${encodeURIComponent(testGroup)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                window._mtSnapshots = data.snapshots || {};
+                updateMtChart();
+            } catch(e) { console.warn('loadMtSnapshots error:', e); }
+        }
+
+        function updateMtChart() {
+            const snaps = window._mtSnapshots || {};
+            const ctx = document.getElementById('mtEquityChart');
+            if (!ctx) return;
+
+            if (mtEquityChart) { mtEquityChart.destroy(); mtEquityChart = null; }
+
+            const datasets = [];
+            const agentIds = Object.keys(snaps);
+
+            for (const id of agentIds) {
+                const info = snaps[id];
+                const sc = SECTION_MAP[info.section] || 'ce';
+                if (!mtActiveFilters.has(sc)) continue;
+
+                const points = info.data.map(d => ({
+                    x: d.date,
+                    y: d.total_return_pct,
+                }));
+                datasets.push({
+                    label: info.name,
+                    data: points,
+                    borderColor: SECTION_COLORS[sc],
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    _section: sc,
+                    _return: points.length > 0 ? points[points.length - 1].y : 0,
+                });
+            }
+
+            if (mtChartMode === 'top10' && datasets.length > 10) {
+                datasets.sort((a,b) => b._return - a._return);
+                const top5 = datasets.slice(0, 5);
+                const bottom5 = datasets.slice(-5);
+                const visible = new Set([...top5, ...bottom5]);
+                datasets.forEach(ds => {
+                    if (!visible.has(ds)) { ds.hidden = true; ds.borderWidth = 0.5; }
+                });
+            }
+
+            const allDates = new Set();
+            datasets.forEach(ds => ds.data.forEach(p => allDates.add(p.x)));
+            const labels = [...allDates].sort();
+
+            mtEquityChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', intersect: false },
+                    scales: {
+                        x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 10 } } },
+                        y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 10 }, callback: v => v.toFixed(1) + '%' } },
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%`,
+                            },
+                        },
+                    },
+                },
+            });
+        }
+
+        // ---- Model Testing: Agent Trades Modal ----
+        async function openMtTrades(agentId, agentName) {
+            document.getElementById('mtTradesModal').classList.remove('hidden');
+            document.getElementById('mtTradesTitle').textContent = agentName;
+            document.getElementById('mtTradesBody').innerHTML = '<p class="text-slate-500 text-sm">Loading trades...</p>';
+
+            try {
+                const [tradesRes, summaryRes] = await Promise.all([
+                    fetch(`/api/agents/${agentId}/trades?limit=200`),
+                    fetch(`/api/agents/${agentId}/summary`),
+                ]);
+                const trades = await tradesRes.json();
+                const summary = await summaryRes.json();
+
+                const agent = summary.agent || {};
+                const subParts = [];
+                subParts.push(`Capital: $${(agent.starting_capital||0).toLocaleString()}`);
+                subParts.push(`Value: $${(summary.total_value||0).toLocaleString(undefined,{minimumFractionDigits:2})}`);
+                subParts.push(`Return: ${pct(summary.total_return_pct||0)}`);
+                subParts.push(`Cash: $${(summary.cash||0).toLocaleString(undefined,{minimumFractionDigits:2})}`);
+                document.getElementById('mtTradesSubtitle').textContent = subParts.join('  ·  ');
+
+                if (!trades.length) {
+                    document.getElementById('mtTradesBody').innerHTML = '<p class="text-slate-500 text-sm py-8 text-center">No trades yet</p>';
+                    return;
+                }
+
+                let html = `<table class="w-full text-xs">
+                    <thead><tr class="text-slate-400 uppercase tracking-wider border-b border-slate-700">
+                        <th class="py-2 px-2 text-left">Date</th>
+                        <th class="py-2 px-2 text-left">Symbol</th>
+                        <th class="py-2 px-2 text-left">Side</th>
+                        <th class="py-2 px-2 text-right">Qty</th>
+                        <th class="py-2 px-2 text-right">Price</th>
+                        <th class="py-2 px-2 text-right">Total</th>
+                        <th class="py-2 px-2 text-right">P&L</th>
+                        <th class="py-2 px-2 text-left">Reasoning</th>
+                    </tr></thead><tbody>`;
+
+                for (const t of trades) {
+                    const ts = (t.timestamp || '').slice(0, 16).replace('T', ' ');
+                    const side = t.action.toUpperCase();
+                    const sideClass = side === 'BUY' ? 'text-emerald-400' : 'text-rose-400';
+                    const rpnl = t.realized_pnl || 0;
+                    const pnlStr = side === 'SELL' && rpnl !== 0 ? `<span class="${rpnl>=0?'stat-positive':'stat-negative'}">$${rpnl.toFixed(2)}</span>` : '';
+                    const reason = esc((t.reasoning || '').slice(0, 120));
+                    html += `<tr class="border-b border-slate-800 hover:bg-slate-800/50">
+                        <td class="py-1.5 px-2 text-slate-400 whitespace-nowrap">${ts}</td>
+                        <td class="py-1.5 px-2 text-white font-medium">${esc(t.symbol)}</td>
+                        <td class="py-1.5 px-2 ${sideClass} font-semibold">${side}</td>
+                        <td class="py-1.5 px-2 text-right text-slate-300">${t.quantity}</td>
+                        <td class="py-1.5 px-2 text-right text-slate-300">$${t.price.toFixed(2)}</td>
+                        <td class="py-1.5 px-2 text-right text-slate-300">$${t.total_cost.toFixed(2)}</td>
+                        <td class="py-1.5 px-2 text-right">${pnlStr}</td>
+                        <td class="py-1.5 px-2 text-slate-500 max-w-[200px] truncate" title="${reason}">${reason}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table>';
+                document.getElementById('mtTradesBody').innerHTML = html;
+            } catch(e) {
+                document.getElementById('mtTradesBody').innerHTML = `<p class="text-red-400 text-sm">Error loading trades: ${e.message}</p>`;
+            }
+        }
+
+        function closeMtTrades() {
+            document.getElementById('mtTradesModal').classList.add('hidden');
         }
 
         // ---- Init ----

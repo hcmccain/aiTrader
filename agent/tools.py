@@ -82,7 +82,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "place_trade",
-        "description": "Execute a paper trade (buy or sell). The trade will be validated against risk management rules before execution.",
+        "description": "Execute a trade (buy or sell) via the Alpaca broker. The trade will be validated against risk management rules and submitted as a market order.",
         "input_schema": {
             "type": "object",
             "properties": {

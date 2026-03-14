@@ -47,13 +47,15 @@ def get_market_session_phase() -> str:
     return "closed"
 
 
-def get_sessions_remaining_today() -> int:
-    from config import INTRADAY_INTERVAL_MINUTES
+def get_sessions_remaining_today(interval_minutes: int = None) -> int:
+    if interval_minutes is None:
+        from config import INTRADAY_INTERVAL_MINUTES
+        interval_minutes = INTRADAY_INTERVAL_MINUTES
     now_et = datetime.now(ET)
     if now_et.time() >= MARKET_CLOSE:
         return 0
     minutes_left = (MARKET_CLOSE.hour * 60 + MARKET_CLOSE.minute) - (now_et.hour * 60 + now_et.minute)
-    return max(0, minutes_left // INTRADAY_INTERVAL_MINUTES)
+    return max(0, minutes_left // interval_minutes)
 
 
 def get_position_changes(agent_id: int) -> list[dict]:
@@ -80,6 +82,17 @@ def get_position_changes(agent_id: int) -> list[dict]:
 
 
 def get_current_price(symbol: str) -> Optional[float]:
+    # Try Alpaca real-time data first (IEX feed, no delay)
+    try:
+        from broker.alpaca import is_configured, get_latest_trade_price
+        if is_configured():
+            price = get_latest_trade_price(symbol)
+            if price is not None:
+                return price
+    except Exception:
+        pass
+
+    # Fall back to yfinance (may be 15-20 min delayed)
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.fast_info

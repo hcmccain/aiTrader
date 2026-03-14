@@ -1,19 +1,21 @@
 import logging
+from datetime import datetime
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-
-from config import SCHEDULE_HOUR, SCHEDULE_MINUTE, INTRADAY_INTERVAL_MINUTES
 
 logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler()
 
+_running_agents: set[int] = set()
+
 
 def _stop_loss_monitor():
     """Lightweight price check every 30 seconds — auto-sells positions down more than 3%."""
     from data.market import is_market_open, get_current_price
-    from portfolio.database import get_active_agents, get_connection
+    from portfolio.database import get_active_agents
     from portfolio.manager import get_portfolio_summary, execute_trade
     from portfolio.models import AssetType, TradeAction
 
@@ -51,11 +53,14 @@ def _stop_loss_monitor():
             logger.error(f"Stop-loss monitor error for '{agent['name']}': {e}")
 
 
-def _run_active_agents_job():
-    """Run all active agents."""
+def _agents_tick():
+    """Runs every 1 minute. Checks each agent's per-agent interval and runs if due."""
     from agent.trader import run_trading_session
-    from portfolio.database import get_active_agents
-    from data.market import get_market_session_phase
+    from portfolio.database import get_active_agents, update_last_run_at
+    from data.market import is_market_open, get_market_session_phase
+
+    if not is_market_open():
+        return
 
     phase = get_market_session_phase()
     if phase == "closed":
@@ -63,16 +68,38 @@ def _run_active_agents_job():
 
     agents = get_active_agents()
     if not agents:
-        logger.info("No active agents to run")
         return
 
-    logger.info(f"[{phase}] Running session for {len(agents)} active agent(s)")
+    now = datetime.now()
+
     for agent in agents:
+        agent_id = agent["id"]
+
+        if agent_id in _running_agents:
+            continue
+
+        interval = agent.get("check_interval_minutes", 15) or 15
+        last_run = agent.get("last_run_at", "")
+
+        if last_run:
+            try:
+                last_dt = datetime.fromisoformat(last_run)
+                elapsed = (now - last_dt).total_seconds()
+                if elapsed < interval * 60:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+        _running_agents.add(agent_id)
         try:
-            result = run_trading_session(agent["id"], run_type="scheduled", session_phase=phase)
+            logger.info(f"[{phase}] Running session for '{agent['name']}' (interval={interval}min)")
+            update_last_run_at(agent_id)
+            result = run_trading_session(agent_id, run_type="scheduled", session_phase=phase)
             logger.info(f"Agent '{agent['name']}': {result.get('trades_made', 0)} trades ({phase})")
         except Exception as e:
             logger.error(f"Agent '{agent['name']}' failed: {e}", exc_info=True)
+        finally:
+            _running_agents.discard(agent_id)
 
 
 def _eod_snapshot_job():
@@ -88,33 +115,22 @@ def _eod_snapshot_job():
             logger.error(f"EOD snapshot failed for '{agent['name']}': {e}")
 
 
-def _build_cron_minutes(interval: int) -> str:
-    """Build a cron minute spec aligned to market open (minute 0 and 30 for 30-min, etc.)."""
-    minutes = list(range(0, 60, interval))
-    if 30 not in minutes:
-        minutes.append(30)
-        minutes.sort()
-    return ",".join(str(m) for m in minutes)
-
-
 def start_scheduler():
     if scheduler.running:
         logger.info("Scheduler already running, skipping start")
         return
 
-    trading_minutes = _build_cron_minutes(5)
-
-    # Active agents: every 5 min
+    # Per-agent tick: every 1 minute during market hours
     scheduler.add_job(
-        _run_active_agents_job,
+        _agents_tick,
         CronTrigger(
             day_of_week="mon-fri",
             hour="9-15",
-            minute=trading_minutes,
+            minute="*",
             timezone="US/Eastern",
         ),
-        id="intraday_trading",
-        name="Active Agents (every 5 min)",
+        id="agents_tick",
+        name="Per-Agent Tick (every 1 min)",
         replace_existing=True,
     )
 
@@ -138,7 +154,7 @@ def start_scheduler():
 
     scheduler.start()
     logger.info(
-        f"Scheduler started — active agents every 5 min, stop-loss monitor every 30s, EOD snapshot at 4:05 PM ET"
+        "Scheduler started — per-agent tick every 1 min, stop-loss monitor every 30s, EOD snapshot at 4:05 PM ET"
     )
 
 

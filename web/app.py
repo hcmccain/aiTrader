@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sse_starlette.sse import EventSourceResponse
 
-from config import ANTHROPIC_API_KEY, WEB_HOST, WEB_PORT, INTRADAY_INTERVAL_MINUTES
+from config import ANTHROPIC_API_KEY, WEB_HOST, WEB_PORT
 from portfolio.manager import initialize, get_portfolio_summary, take_daily_snapshot
 from typing import Optional
 
@@ -27,8 +27,15 @@ from portfolio.database import (
     get_trades,
     get_agent_logs,
     get_token_cost_summary,
+    get_agents_by_test_group,
+    get_test_groups,
+    get_agent_trade_stats,
+    get_agent_api_cost,
     RISK_PRESETS,
     ALL_ASSET_TYPES,
+    SUPPORTED_MODELS,
+    MODEL_SHORT_NAMES,
+    get_model_section,
 )
 from scheduler.jobs import start_scheduler, stop_scheduler
 from web.events import subscribe
@@ -87,9 +94,11 @@ async def dashboard(request: Request):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/agents")
-async def api_list_agents():
+async def api_list_agents(exclude_test: bool = True):
     try:
         agents = get_all_agents()
+        if exclude_test:
+            agents = [a for a in agents if not a.get("test_group")]
         result = []
         for agent in agents:
             try:
@@ -139,6 +148,10 @@ async def api_create_agent(request: Request):
             max_daily_loss_pct=body.get("max_daily_loss_pct"),
             max_daily_investment_pct=body.get("max_daily_investment_pct"),
             allowed_asset_types=body.get("allowed_asset_types"),
+            model=body.get("model"),
+            scout_model=body.get("scout_model"),
+            check_interval_minutes=int(body.get("check_interval_minutes", 15)),
+            strategy_interval_minutes=int(body.get("strategy_interval_minutes", 60)),
         )
 
         return {"status": "ok", "agent_id": agent_id, "agent": _serialize_agent(get_agent(agent_id))}
@@ -338,7 +351,7 @@ async def api_intraday_snapshots(agent_id: int, date: Optional[str] = None):
 async def api_intraday_config():
     from data.market import is_market_open, get_market_session_phase, get_sessions_remaining_today
     return {
-        "interval_minutes": INTRADAY_INTERVAL_MINUTES,
+        "interval_minutes": 15,
         "market_open": is_market_open(),
         "session_phase": get_market_session_phase(),
         "sessions_remaining": get_sessions_remaining_today(),
@@ -368,6 +381,167 @@ async def api_company_name(ticker: str):
         return {"ticker": ticker, "name": name}
     except Exception:
         return {"ticker": ticker, "name": ticker}
+
+
+# ---------------------------------------------------------------------------
+# Model Testing Matrix API
+# ---------------------------------------------------------------------------
+
+@app.post("/api/agents/generate-test-matrix")
+async def api_generate_test_matrix(request: Request):
+    from datetime import date as dt_date
+    try:
+        body = await request.json()
+        capital = float(body.get("starting_capital", 15000))
+        risk_level = int(body.get("risk_level", 5))
+        check_interval = int(body.get("check_interval_minutes", 5))
+        strategy_interval = int(body.get("strategy_interval_minutes", 60))
+        test_group = body.get("test_group", f"matrix-{dt_date.today().isoformat()}")
+
+        existing = get_agents_by_test_group(test_group)
+        existing_names = {a["name"] for a in existing}
+
+        created = []
+        skipped = 0
+        for scout in SUPPORTED_MODELS:
+            for decision in SUPPORTED_MODELS:
+                scout_short = MODEL_SHORT_NAMES.get(scout, scout)
+                decision_short = MODEL_SHORT_NAMES.get(decision, decision)
+                name = f"{scout_short}\u2192{decision_short}"
+
+                if name in existing_names:
+                    skipped += 1
+                    continue
+
+                agent_id = create_agent(
+                    name=name,
+                    starting_capital=capital,
+                    risk_level=risk_level,
+                    model=decision,
+                    scout_model=scout,
+                    check_interval_minutes=check_interval,
+                    strategy_interval_minutes=strategy_interval,
+                    test_group=test_group,
+                )
+                created.append({"id": agent_id, "name": name, "scout": scout, "decision": decision})
+
+        return {
+            "status": "ok",
+            "test_group": test_group,
+            "created": len(created),
+            "skipped": skipped,
+            "agents": created,
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/test-matrix")
+async def api_test_matrix(test_group: Optional[str] = None):
+    try:
+        if not test_group:
+            groups = get_test_groups()
+            if not groups:
+                return {"agents": [], "test_group": None, "test_groups": []}
+            test_group = groups[0]
+
+        agents = get_agents_by_test_group(test_group)
+        result = []
+        for agent in agents:
+            scout = agent.get("scout_model", "")
+            decision = agent.get("model", "")
+            section = get_model_section(scout, decision)
+
+            try:
+                summary = get_portfolio_summary(agent["id"])
+                total_return_pct = summary.total_return_pct
+                daily_return_pct = summary.daily_return_pct
+                total_value = summary.total_value
+            except Exception:
+                total_return_pct = 0
+                daily_return_pct = 0
+                total_value = agent["cash"]
+
+            stats = get_agent_trade_stats(agent["id"])
+            api_cost = get_agent_api_cost(agent["id"])
+            total_return_dollar = total_value - agent["starting_capital"]
+            roi_net = total_return_dollar - api_cost
+
+            result.append({
+                "id": agent["id"],
+                "name": agent["name"],
+                "scout_model": scout,
+                "decision_model": decision,
+                "scout_short": MODEL_SHORT_NAMES.get(scout, scout),
+                "decision_short": MODEL_SHORT_NAMES.get(decision, decision),
+                "section": section,
+                "is_active": agent["is_active"],
+                "starting_capital": agent["starting_capital"],
+                "total_value": total_value,
+                "total_return_pct": total_return_pct,
+                "daily_return_pct": daily_return_pct,
+                "total_trades": stats["total_trades"],
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "win_rate": stats["win_rate"],
+                "api_cost": api_cost,
+                "roi_net": round(roi_net, 2),
+                "check_interval_minutes": agent.get("check_interval_minutes", 15),
+            })
+
+        result.sort(key=lambda x: x["total_return_pct"], reverse=True)
+
+        return {
+            "agents": result,
+            "test_group": test_group,
+            "test_groups": get_test_groups(),
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/test-matrix/snapshots")
+async def api_test_matrix_snapshots(
+    test_group: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    try:
+        if not test_group:
+            groups = get_test_groups()
+            if not groups:
+                return {"snapshots": {}, "test_group": None}
+            test_group = groups[0]
+
+        agents = get_agents_by_test_group(test_group)
+        snapshots = {}
+        for agent in agents:
+            snaps = get_daily_snapshots(agent["id"], start_date=start_date, end_date=end_date)
+            if snaps:
+                snapshots[agent["id"]] = {
+                    "name": agent["name"],
+                    "scout_short": MODEL_SHORT_NAMES.get(agent.get("scout_model", ""), ""),
+                    "decision_short": MODEL_SHORT_NAMES.get(agent.get("model", ""), ""),
+                    "section": get_model_section(
+                        agent.get("scout_model", ""), agent.get("model", "")
+                    ),
+                    "data": snaps,
+                }
+
+        return {"snapshots": snapshots, "test_group": test_group}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.delete("/api/test-matrix/{test_group}")
+async def api_delete_test_matrix(test_group: str):
+    try:
+        agents = get_agents_by_test_group(test_group)
+        for agent in agents:
+            delete_agent(agent["id"])
+        return {"status": "ok", "deleted": len(agents)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------

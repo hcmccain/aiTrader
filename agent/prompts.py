@@ -1,3 +1,4 @@
+import json
 from portfolio.database import get_risk_params, get_agent
 
 RISK_LEVEL_DESCRIPTIONS = {
@@ -128,7 +129,7 @@ You are an OPTIONS-ONLY trader with ${starting_capital:,.0f} capital.
 - Expiration: 1-2 weeks out (NOT same-day or next-day)
 """
 
-    return f"""You are an AI portfolio manager whose PRIMARY OBJECTIVE is to grow the portfolio's value every single day through active trading. You are NOT a buy-and-hold investor. You are an active trader who generates daily profit.
+    return f"""You are an AI portfolio manager whose PRIMARY OBJECTIVE is to grow the portfolio's value every single day through active trading. Trades are executed via the Alpaca broker API (paper trading mode). Every trade you place is a real market order that fills at live market prices. You are NOT a buy-and-hold investor. You are an active trader who generates daily profit.
 
 ## CURRENT SESSION: {session_phase.upper().replace('_', ' ')}
 
@@ -252,3 +253,166 @@ You have ONLY 12 iterations. You MUST place trades. If you reach iteration 4 wit
 **EVERY SESSION you MUST place at least 2 trades.** If you end with 0 trades, you have failed.
 
 You are measured on DAILY portfolio growth. Find the action and ride it."""
+
+
+# ---------------------------------------------------------------------------
+# Two-model architecture prompts
+# ---------------------------------------------------------------------------
+
+def build_strategy_prompt(agent_id: int, portfolio_data: dict, recent_trades: list) -> str:
+    """Prompt for the deep model's strategy phase — no tool calls, pure reasoning."""
+    risk = get_risk_params(agent_id)
+    agent = get_agent(agent_id)
+    level = risk["risk_level"]
+    risk_desc = RISK_LEVEL_DESCRIPTIONS.get(level, RISK_LEVEL_DESCRIPTIONS[5])
+    allowed = risk.get("allowed_asset_types", ["stock", "etf", "mutual_fund", "commodity", "option"])
+
+    recent_trades_text = ""
+    if recent_trades:
+        recent_trades_text = "\n## Recent Trade History\n"
+        for t in recent_trades[:20]:
+            pnl_str = f" (P&L: ${t.get('realized_pnl', 0):+.2f})" if t.get("action") == "sell" else ""
+            recent_trades_text += f"- {t['action'].upper()} {t['quantity']} {t['symbol']} @ ${t['price']:.2f}{pnl_str} — {t.get('reasoning', '')[:80]}\n"
+
+    return f"""You are a senior portfolio strategist. Your job is to set the trading STRATEGY for the next hour.
+You will NOT execute any trades yourself. A separate scout model will carry out your directives.
+
+## Agent: {agent['name'] if agent else 'Unknown'}
+## Risk Level: {level}/10
+{risk_desc}
+
+## Allowed Instruments: {', '.join(allowed)}
+
+## Current Portfolio State
+```json
+{json.dumps(portfolio_data, indent=2, default=str)}
+```
+{recent_trades_text}
+## Your Task
+
+Analyze the portfolio and produce a STRATEGY DIRECTIVE. Cover:
+
+1. **Overall stance** — Bullish, bearish, or neutral? How aggressively should the scout deploy capital?
+2. **Sectors/themes to favor** — Based on recent performance and portfolio composition, which sectors should the scout focus on?
+3. **Sectors/themes to avoid** — Any sectors that are overweight, have been losing, or should be trimmed?
+4. **Positions to watch** — Any current holdings that should be sold (profit target hit, momentum faded)? Any that should be held?
+5. **Risk adjustments** — Should the scout be more conservative or aggressive than usual? Any specific constraints?
+6. **Position sizing guidance** — How large should new positions be relative to portfolio size?
+
+Keep your response concise and actionable. The scout model will read these directives and follow them.
+Respond in plain text, not JSON. Be specific — name tickers, sectors, and percentages where relevant."""
+
+
+def build_scout_prompt(agent_id: int, strategy: str, session_phase: str = "morning") -> str:
+    """Prompt for the scout (fast model) — has tool access, produces trade proposals."""
+    base_prompt = build_system_prompt(agent_id, session_phase=session_phase)
+
+    strategy_section = ""
+    if strategy and strategy.strip():
+        strategy_section = f"""
+
+## STRATEGIST DIRECTIVES (FROM THE DECISION MODEL)
+
+The following strategy was set by the senior decision model. You MUST follow these directives.
+Do NOT deviate from the strategy unless market conditions have clearly changed since it was set.
+
+---
+{strategy}
+---
+"""
+
+    proposal_instructions = """
+
+## TRADE PROPOSAL FORMAT (CRITICAL)
+
+You are the SCOUT. You gather data and propose trades, but you do NOT execute them yourself.
+Your proposals will be reviewed by the decision model before execution.
+
+Instead of calling `place_trade`, output your proposals as a JSON block at the END of your analysis:
+
+```proposals
+[
+  {
+    "symbol": "TICKER",
+    "asset_type": "stock|etf|option|commodity|mutual_fund",
+    "action": "buy|sell",
+    "quantity": 10,
+    "reasoning": "Brief explanation of why this trade makes sense",
+    "data_summary": "Key data points: price $X, up Y% today, volume Z"
+  }
+]
+```
+
+RULES:
+- You still MUST use tools to research (get_portfolio_summary, get_top_movers, get_market_data, etc.)
+- Do NOT call place_trade — the decision model will handle execution after reviewing your proposals
+- Include ALL data that supports each proposal in the data_summary field
+- Propose at least 2 trades per session when opportunities exist
+- If there are no good opportunities, output an empty proposals list: ```proposals\n[]\n```
+"""
+
+    return base_prompt + strategy_section + proposal_instructions
+
+
+def build_review_prompt(agent_id: int, proposals: list, strategy: str, portfolio_data: dict) -> str:
+    """Prompt for the deep model's review phase — single call, approves/modifies/rejects proposals."""
+    risk = get_risk_params(agent_id)
+    agent = get_agent(agent_id)
+    level = risk["risk_level"]
+
+    max_pos = risk["max_position_pct"] * 100
+    max_opt = risk["max_options_pct"] * 100
+    min_cash = risk["min_cash_reserve_pct"] * 100
+    max_loss = risk["max_daily_loss_pct"] * 100
+    max_daily_inv = risk["max_daily_investment_pct"] * 100
+
+    return f"""You are the DECISION MODEL reviewing trade proposals from the scout.
+Your job: APPROVE, MODIFY, or REJECT each proposal based on the strategy, risk rules, and portfolio state.
+
+## Agent: {agent['name'] if agent else 'Unknown'}
+## Risk Level: {level}/10
+
+## Risk Rules
+- Max single position: {max_pos:.0f}% of portfolio
+- Max options allocation: {max_opt:.0f}% of portfolio
+- Min cash reserve: {min_cash:.0f}% of portfolio
+- Daily loss stop: {max_loss:.1f}%
+- Max daily investment: {max_daily_inv:.0f}% of portfolio
+
+## Current Strategy
+{strategy if strategy else '(No active strategy — use your judgment)'}
+
+## Current Portfolio
+```json
+{json.dumps(portfolio_data, indent=2, default=str)}
+```
+
+## Proposed Trades
+```json
+{json.dumps(proposals, indent=2)}
+```
+
+## Your Task
+
+For EACH proposal, respond with a JSON decision:
+
+```decisions
+[
+  {{
+    "symbol": "TICKER",
+    "asset_type": "stock|etf|option|commodity|mutual_fund",
+    "action": "buy|sell",
+    "quantity": 10,
+    "reasoning": "Why you approved/modified this trade",
+    "decision": "APPROVE|MODIFY|REJECT"
+  }}
+]
+```
+
+Decision guidelines:
+- **APPROVE**: The trade aligns with strategy, passes risk rules, and has sound reasoning. Keep the original quantity.
+- **MODIFY**: The trade idea is good but needs adjustment. Change the quantity or add a note. Set the quantity to the corrected value.
+- **REJECT**: The trade violates risk rules, contradicts strategy, or has weak reasoning. Include why in the reasoning field.
+
+Be decisive. The scout has already done the research — focus on risk management and strategic alignment.
+Approve good trades quickly. Only reject if there's a clear problem."""

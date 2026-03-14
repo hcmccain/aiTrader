@@ -15,3 +15,69 @@
 ::-webkit-scrollbar-thumb:hover {
     background: #64748b;
 }
+
+.tip-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: help;
+    color: #475569;
+    transition: color 0.15s;
+}
+
+.tip-wrap:hover {
+    color: #818cf8;
+}
+
+.tip-bubble {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    width: 280px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    box-shadow: 0 12px 32px rgba(0,0,0,.5);
+    color: #cbd5e1;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.55;
+    z-index: 300;
+    pointer-events: none;
+    transition: opacity 0.2s, visibility 0.2s;
+}
+
+.tip-bubble::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    right: 3px;
+    border: 6px solid transparent;
+    border-top-color: #334155;
+}
+
+.tip-wrap:hover .tip-bubble {
+    visibility: visible;
+    opacity: 1;
+}
+
+.tip-bubble strong {
+    display: block;
+    color: #e2e8f0;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.tip-bubble .tip-example {
+    display: block;
+    margin-top: 8px;
+    padding: 7px 10px;
+    border-radius: 5px;
+    background: #0f172a;
+    color: #94a3b8;
+    font-size: 11px;
+    line-height: 1.5;
+}

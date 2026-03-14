@@ -31,6 +31,14 @@ def init_db():
             max_daily_loss_pct REAL NOT NULL DEFAULT 3,
             max_daily_investment_pct REAL NOT NULL DEFAULT 40,
             allowed_asset_types TEXT NOT NULL DEFAULT 'stock,etf,mutual_fund,commodity,option',
+            model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+            scout_model TEXT NOT NULL DEFAULT 'claude-haiku-4-20250414',
+            check_interval_minutes INTEGER NOT NULL DEFAULT 15,
+            strategy_interval_minutes INTEGER NOT NULL DEFAULT 60,
+            current_strategy TEXT DEFAULT '',
+            strategy_updated_at TEXT DEFAULT '',
+            last_run_at TEXT DEFAULT '',
+            test_group TEXT DEFAULT '',
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         );
@@ -104,6 +112,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
             agent_id INTEGER,
+            model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
             input_tokens INTEGER NOT NULL DEFAULT 0,
             output_tokens INTEGER NOT NULL DEFAULT 0,
             cost_usd REAL NOT NULL DEFAULT 0,
@@ -118,12 +127,41 @@ def init_db():
             "ALTER TABLE agents ADD COLUMN allowed_asset_types TEXT NOT NULL DEFAULT 'stock,etf,mutual_fund,commodity,option'"
         )
 
+    # Migration: add model column to agents
+    if "model" not in cols:
+        conn.execute(
+            "ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514'"
+        )
+
+    # Migration: two-model architecture columns
+    if "scout_model" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN scout_model TEXT NOT NULL DEFAULT 'claude-haiku-4-20250414'")
+    if "check_interval_minutes" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN check_interval_minutes INTEGER NOT NULL DEFAULT 15")
+    if "strategy_interval_minutes" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN strategy_interval_minutes INTEGER NOT NULL DEFAULT 60")
+    if "current_strategy" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN current_strategy TEXT DEFAULT ''")
+    if "strategy_updated_at" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN strategy_updated_at TEXT DEFAULT ''")
+    if "last_run_at" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN last_run_at TEXT DEFAULT ''")
+    if "test_group" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN test_group TEXT DEFAULT ''")
+
     # Migration: add realized_pnl and avg_cost_basis to trades
     trade_cols = [row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()]
     if "realized_pnl" not in trade_cols:
         conn.execute("ALTER TABLE trades ADD COLUMN realized_pnl REAL DEFAULT 0")
     if "avg_cost_basis" not in trade_cols:
         conn.execute("ALTER TABLE trades ADD COLUMN avg_cost_basis REAL DEFAULT 0")
+
+    # Migration: add model column to token_usage
+    tu_cols = [row[1] for row in conn.execute("PRAGMA table_info(token_usage)").fetchall()]
+    if "model" not in tu_cols:
+        conn.execute(
+            "ALTER TABLE token_usage ADD COLUMN model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514'"
+        )
 
     conn.commit()
     conn.close()
@@ -150,6 +188,50 @@ RISK_PRESETS = {
 ALL_ASSET_TYPES = ["stock", "etf", "mutual_fund", "commodity", "option"]
 
 
+SUPPORTED_MODELS = [
+    # Anthropic
+    "claude-sonnet-4-20250514",
+    "claude-haiku-4-20250414",
+    "claude-opus-4-20250514",
+    # OpenAI
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o3-mini",
+    # Google
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+]
+
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_SCOUT_MODEL = "claude-haiku-4-20250414"
+
+CHEAP_MODELS = {"claude-haiku-4-20250414", "gpt-4o-mini", "o3-mini", "gemini-2.5-flash"}
+EXPENSIVE_MODELS = {"claude-sonnet-4-20250514", "claude-opus-4-20250514", "gpt-4o", "gemini-2.5-pro"}
+
+MODEL_SHORT_NAMES = {
+    "claude-haiku-4-20250414": "Haiku",
+    "claude-sonnet-4-20250514": "Sonnet",
+    "claude-opus-4-20250514": "Opus",
+    "gpt-4o": "GPT4o",
+    "gpt-4o-mini": "Mini",
+    "o3-mini": "o3mini",
+    "gemini-2.5-pro": "GemPro",
+    "gemini-2.5-flash": "Flash",
+}
+
+
+def get_model_section(scout_model: str, decision_model: str) -> str:
+    scout_cheap = scout_model in CHEAP_MODELS
+    decision_cheap = decision_model in CHEAP_MODELS
+    if scout_cheap and not decision_cheap:
+        return "Cheap Scout + Expensive Decision"
+    if not scout_cheap and not decision_cheap:
+        return "Expensive Scout + Expensive Decision"
+    if scout_cheap and decision_cheap:
+        return "Cheap Scout + Cheap Decision"
+    return "Expensive Scout + Cheap Decision"
+
+
 def create_agent(
     name: str,
     starting_capital: float = 100000,
@@ -160,6 +242,11 @@ def create_agent(
     max_daily_loss_pct: float = None,
     max_daily_investment_pct: float = None,
     allowed_asset_types: list = None,
+    model: str = None,
+    scout_model: str = None,
+    check_interval_minutes: int = 15,
+    strategy_interval_minutes: int = 60,
+    test_group: str = "",
 ) -> int:
     risk_level = max(1, min(10, risk_level))
     preset = RISK_PRESETS[risk_level]
@@ -171,12 +258,19 @@ def create_agent(
         if not asset_types_str:
             asset_types_str = ",".join(ALL_ASSET_TYPES)
 
+    agent_model = model if model in SUPPORTED_MODELS else DEFAULT_MODEL
+    agent_scout_model = scout_model if scout_model in SUPPORTED_MODELS else DEFAULT_SCOUT_MODEL
+    check_interval_minutes = max(2, min(60, check_interval_minutes))
+    strategy_interval_minutes = max(15, min(240, strategy_interval_minutes))
+
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO agents (name, starting_capital, cash, risk_level,
            max_position_pct, max_options_pct, min_cash_reserve_pct,
-           max_daily_loss_pct, max_daily_investment_pct, allowed_asset_types, is_active, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+           max_daily_loss_pct, max_daily_investment_pct, allowed_asset_types,
+           model, scout_model, check_interval_minutes, strategy_interval_minutes,
+           test_group, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
         (
             name,
             starting_capital,
@@ -188,6 +282,11 @@ def create_agent(
             max_daily_loss_pct if max_daily_loss_pct is not None else preset["max_daily_loss_pct"],
             max_daily_investment_pct if max_daily_investment_pct is not None else preset["max_daily_investment_pct"],
             asset_types_str,
+            agent_model,
+            agent_scout_model,
+            check_interval_minutes,
+            strategy_interval_minutes,
+            test_group,
             datetime.now().isoformat(),
         ),
     )
@@ -218,11 +317,60 @@ def get_active_agents() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_agents_by_test_group(test_group: str) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM agents WHERE test_group = ? ORDER BY id ASC", (test_group,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_test_groups() -> list[str]:
+    """Return all distinct non-empty test group names."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT test_group FROM agents WHERE test_group != '' ORDER BY test_group DESC"
+    ).fetchall()
+    conn.close()
+    return [r["test_group"] for r in rows]
+
+
+def get_agent_trade_stats(agent_id: int) -> dict:
+    conn = get_connection()
+    total = conn.execute(
+        "SELECT COUNT(*) as cnt FROM trades WHERE agent_id = ?", (agent_id,)
+    ).fetchone()["cnt"]
+    sells = conn.execute(
+        "SELECT COUNT(*) as cnt, "
+        "SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as wins, "
+        "SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losses "
+        "FROM trades WHERE agent_id = ? AND action = 'sell'",
+        (agent_id,),
+    ).fetchone()
+    wins = sells["wins"] or 0
+    losses = sells["losses"] or 0
+    win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+    conn.close()
+    return {"total_trades": total, "wins": wins, "losses": losses, "win_rate": round(win_rate, 1)}
+
+
+def get_agent_api_cost(agent_id: int) -> float:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM token_usage WHERE agent_id = ?",
+        (agent_id,),
+    ).fetchone()
+    conn.close()
+    return round(row["cost"], 4)
+
+
 def update_agent(agent_id: int, updates: dict):
     allowed = {
         "name", "risk_level", "max_position_pct", "max_options_pct",
         "min_cash_reserve_pct", "max_daily_loss_pct", "max_daily_investment_pct",
-        "allowed_asset_types", "is_active",
+        "allowed_asset_types", "model", "scout_model", "check_interval_minutes",
+        "strategy_interval_minutes", "test_group", "is_active",
     }
     filtered = {}
     for k, v in updates.items():
@@ -230,6 +378,10 @@ def update_agent(agent_id: int, updates: dict):
             continue
         if k == "allowed_asset_types" and isinstance(v, list):
             v = ",".join(t for t in v if t in ALL_ASSET_TYPES)
+        if k == "check_interval_minutes":
+            v = max(2, min(60, int(v)))
+        if k == "strategy_interval_minutes":
+            v = max(15, min(240, int(v)))
         filtered[k] = v
 
     if not filtered:
@@ -263,7 +415,7 @@ def reset_agent(agent_id: int):
     conn.execute("DELETE FROM daily_snapshots WHERE agent_id = ?", (agent_id,))
     conn.execute("DELETE FROM agent_logs WHERE agent_id = ?", (agent_id,))
     conn.execute(
-        "UPDATE agents SET cash = ?, created_at = ? WHERE id = ?",
+        "UPDATE agents SET cash = ?, current_strategy = '', strategy_updated_at = '', last_run_at = '', created_at = ? WHERE id = ?",
         (agent["starting_capital"], datetime.now().isoformat(), agent_id),
     )
     conn.commit()
@@ -293,6 +445,28 @@ def get_starting_capital(agent_id: int) -> float:
     row = conn.execute("SELECT starting_capital FROM agents WHERE id = ?", (agent_id,)).fetchone()
     conn.close()
     return row["starting_capital"] if row else 100000
+
+
+def update_agent_strategy(agent_id: int, strategy: str):
+    """Store the latest strategy directive for an agent."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE agents SET current_strategy = ?, strategy_updated_at = ? WHERE id = ?",
+        (strategy, datetime.now().isoformat(), agent_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_last_run_at(agent_id: int):
+    """Record that an agent just ran."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE agents SET last_run_at = ? WHERE id = ?",
+        (datetime.now().isoformat(), agent_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_allowed_asset_types(agent_id: int) -> list[str]:
@@ -598,18 +772,38 @@ def get_agent_logs(agent_id: int, limit: int = 20) -> list[dict]:
 # Token usage tracking
 # ---------------------------------------------------------------------------
 
-CLAUDE_INPUT_COST_PER_M = 3.00
-CLAUDE_OUTPUT_COST_PER_M = 15.00
+# Per-model pricing: (input_cost_per_million_tokens, output_cost_per_million_tokens)
+MODEL_PRICING = {
+    # Anthropic
+    "claude-sonnet-4-20250514":  (3.00,  15.00),
+    "claude-haiku-4-20250414":   (0.80,   4.00),
+    "claude-opus-4-20250514":    (15.00,  75.00),
+    # OpenAI (for future use)
+    "gpt-4o":                    (2.50,  10.00),
+    "gpt-4o-mini":               (0.15,   0.60),
+    "o3-mini":                   (1.10,   4.40),
+    # Google (for future use)
+    "gemini-2.5-pro":            (1.25,  10.00),
+    "gemini-2.5-flash":          (0.15,   0.60),
+}
+
+FALLBACK_PRICING = (3.00, 15.00)
 
 
-def insert_token_usage(agent_id: int, input_tokens: int, output_tokens: int):
-    cost = (input_tokens / 1_000_000 * CLAUDE_INPUT_COST_PER_M +
-            output_tokens / 1_000_000 * CLAUDE_OUTPUT_COST_PER_M)
+def _calc_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    input_rate, output_rate = MODEL_PRICING.get(model, FALLBACK_PRICING)
+    return (input_tokens / 1_000_000 * input_rate +
+            output_tokens / 1_000_000 * output_rate)
+
+
+def insert_token_usage(agent_id: int, input_tokens: int, output_tokens: int,
+                        model: str = "claude-sonnet-4-20250514"):
+    cost = _calc_cost(model, input_tokens, output_tokens)
     conn = get_connection()
     conn.execute(
-        """INSERT INTO token_usage (timestamp, agent_id, input_tokens, output_tokens, cost_usd)
-           VALUES (?, ?, ?, ?, ?)""",
-        (datetime.now().isoformat(), agent_id, input_tokens, output_tokens, round(cost, 6)),
+        """INSERT INTO token_usage (timestamp, agent_id, model, input_tokens, output_tokens, cost_usd)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (datetime.now().isoformat(), agent_id, model, input_tokens, output_tokens, round(cost, 6)),
     )
     conn.commit()
     conn.close()
@@ -633,11 +827,30 @@ def get_token_cost_summary() -> dict:
         ).fetchone()
         return {"input_tokens": row["inp"], "output_tokens": row["outp"], "cost": round(row["cost"], 4)}
 
+    def _by_model(where: str = "", params: tuple = ()) -> list:
+        time_filter = f"AND {where.replace('WHERE ', '')}" if where else ""
+        rows = conn.execute(
+            f"SELECT model, "
+            f"COALESCE(SUM(input_tokens),0) as inp, "
+            f"COALESCE(SUM(output_tokens),0) as outp, "
+            f"COALESCE(SUM(cost_usd),0) as cost, "
+            f"COUNT(*) as calls "
+            f"FROM token_usage WHERE 1=1 {time_filter} "
+            f"GROUP BY model ORDER BY cost DESC", params
+        ).fetchall()
+        return [
+            {"model": r["model"], "input_tokens": r["inp"], "output_tokens": r["outp"],
+             "cost": round(r["cost"], 4), "calls": r["calls"]}
+            for r in rows
+        ]
+
     result = {
         "lifetime": _sum(),
         "month": _sum("WHERE timestamp >= ?", (month_start,)),
         "week": _sum("WHERE timestamp >= ?", (week_start,)),
         "today": _sum("WHERE timestamp >= ?", (today,)),
+        "by_model": _by_model(),
+        "by_model_today": _by_model("WHERE timestamp >= ?", (today,)),
     }
     conn.close()
     return result
