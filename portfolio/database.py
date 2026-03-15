@@ -365,6 +365,30 @@ def get_agent_api_cost(agent_id: int) -> float:
     return round(row["cost"], 4)
 
 
+def get_provider_costs(agent_ids: list[int]) -> dict:
+    """Get API costs grouped by provider (claude, openai, gemini) for a set of agents."""
+    if not agent_ids:
+        return {"claude": 0, "openai": 0, "gemini": 0}
+    conn = get_connection()
+    placeholders = ",".join("?" * len(agent_ids))
+    rows = conn.execute(
+        f"SELECT model, COALESCE(SUM(cost_usd), 0) as cost "
+        f"FROM token_usage WHERE agent_id IN ({placeholders}) GROUP BY model",
+        agent_ids,
+    ).fetchall()
+    conn.close()
+    totals = {"claude": 0.0, "openai": 0.0, "gemini": 0.0}
+    for r in rows:
+        model = r["model"] or ""
+        if model.startswith("claude-"):
+            totals["claude"] += r["cost"]
+        elif model.startswith("gpt-") or model.startswith("o3"):
+            totals["openai"] += r["cost"]
+        elif model.startswith("gemini-"):
+            totals["gemini"] += r["cost"]
+    return {k: round(v, 4) for k, v in totals.items()}
+
+
 def update_agent(agent_id: int, updates: dict):
     allowed = {
         "name", "risk_level", "max_position_pct", "max_options_pct",

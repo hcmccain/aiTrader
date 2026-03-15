@@ -31,6 +31,7 @@ from portfolio.database import (
     get_test_groups,
     get_agent_trade_stats,
     get_agent_api_cost,
+    get_provider_costs,
     RISK_PRESETS,
     ALL_ASSET_TYPES,
     SUPPORTED_MODELS,
@@ -509,10 +510,14 @@ async def api_test_matrix(test_group: Optional[str] = None):
 
         result.sort(key=lambda x: x["total_return_pct"], reverse=True)
 
+        agent_ids = [a["id"] for a in agents]
+        provider_costs = get_provider_costs(agent_ids)
+
         return {
             "agents": result,
             "test_group": test_group,
             "test_groups": get_test_groups(),
+            "provider_costs": provider_costs,
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

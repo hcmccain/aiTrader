@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Portfolio Trader v3.0</title>
+    <title>AI Portfolio Trader v4.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <style>
@@ -136,7 +136,7 @@
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v3.0</span></h1>
+                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v4.0</span></h1>
                 <p class="text-sm text-slate-400 mt-1">
                     Multi-agent simulation &middot; Built with Claude
                     <span id="marketStatus" class="ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
@@ -482,7 +482,7 @@
             </div>
 
             <!-- Summary Stats -->
-            <div id="mtSummary" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 hidden">
+            <div id="mtSummary" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-4 hidden">
                 <div class="card p-3">
                     <div class="text-xs text-slate-400 uppercase">Agents</div>
                     <div class="text-lg font-bold text-white" id="mtAgentCount">0</div>
@@ -504,6 +504,18 @@
                 <div class="card p-3">
                     <div class="text-xs text-slate-400 uppercase">Total API Cost</div>
                     <div class="text-lg font-bold text-amber-400" id="mtTotalCost">$0</div>
+                </div>
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">Claude Cost</div>
+                    <div class="text-lg font-bold text-orange-400" id="mtClaudeCost">$0</div>
+                </div>
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">OpenAI Cost</div>
+                    <div class="text-lg font-bold text-green-400" id="mtOpenAICost">$0</div>
+                </div>
+                <div class="card p-3">
+                    <div class="text-xs text-slate-400 uppercase">Gemini Cost</div>
+                    <div class="text-lg font-bold text-blue-400" id="mtGeminiCost">$0</div>
                 </div>
             </div>
 
@@ -663,7 +675,7 @@
                         </div>
 
                         <!-- Config -->
-                        <div class="grid grid-cols-2 gap-4">
+                        <div class="grid grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-xs font-medium text-slate-300 mb-1">Starting Capital per Agent</label>
                                 <div class="relative">
@@ -680,7 +692,16 @@
                                         class="flex-1 accent-indigo-500" oninput="document.getElementById('genRiskVal').textContent=this.value">
                                     <span class="text-sm font-bold text-white w-6 text-center" id="genRiskVal">5</span>
                                 </div>
-                                <p class="text-[10px] text-slate-500 mt-1">1 = ultra-conservative, 10 = aggressive</p>
+                                <p class="text-[10px] text-slate-500 mt-1">1 = conservative, 10 = aggressive</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Check-in Interval</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" id="genCheckInterval" value="15" min="2" max="60" step="1"
+                                        class="input-field w-full py-2 text-sm">
+                                    <span class="text-xs text-slate-500 whitespace-nowrap">min</span>
+                                </div>
+                                <p class="text-[10px] text-slate-500 mt-1">How often scouts check the market</p>
                             </div>
                         </div>
 
@@ -2073,6 +2094,7 @@
 
         // ---- Model Testing ----
         let mtData = [];
+        let mtProviderCosts = {claude: 0, openai: 0, gemini: 0};
         let mtSortKey = 'total_return_pct';
         let mtSortAsc = false;
         let mtActiveFilters = new Set(['ce','ee','cc','ec']);
@@ -2121,6 +2143,7 @@
 
             const capital = parseInt(document.getElementById('genCapital').value) || 10000;
             const risk = parseInt(document.getElementById('genRisk').value) || 5;
+            const checkInterval = parseInt(document.getElementById('genCheckInterval').value) || 15;
 
             const btn = document.getElementById('genSubmitBtn');
             btn.disabled = true;
@@ -2132,7 +2155,7 @@
                     body: JSON.stringify({
                         starting_capital: capital,
                         risk_level: risk,
-                        check_interval_minutes: 5,
+                        check_interval_minutes: checkInterval,
                         strategy_interval_minutes: 60,
                         scout_models: scouts,
                         decision_models: decisions,
@@ -2173,6 +2196,7 @@
                 ).join('') || '<option value="">No test groups</option>';
 
                 mtData = data.agents || [];
+                mtProviderCosts = data.provider_costs || {claude: 0, openai: 0, gemini: 0};
                 const hasData = mtData.length > 0;
 
                 document.getElementById('mtEmpty').style.display = hasData ? 'none' : '';
@@ -2201,6 +2225,9 @@
             document.getElementById('mtWorstAgent').textContent = worst?.name || '--';
             document.getElementById('mtTotalTrades').textContent = mtData.reduce((s,a) => s + a.total_trades, 0);
             document.getElementById('mtTotalCost').textContent = '$' + mtData.reduce((s,a) => s + a.api_cost, 0).toFixed(2);
+            document.getElementById('mtClaudeCost').textContent = '$' + (mtProviderCosts.claude || 0).toFixed(2);
+            document.getElementById('mtOpenAICost').textContent = '$' + (mtProviderCosts.openai || 0).toFixed(2);
+            document.getElementById('mtGeminiCost').textContent = '$' + (mtProviderCosts.gemini || 0).toFixed(2);
         }
 
         function renderMtTable() {
