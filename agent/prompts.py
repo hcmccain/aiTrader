@@ -3,7 +3,7 @@ from portfolio.database import get_risk_params, get_agent
 
 RISK_LEVEL_DESCRIPTIONS = {
     1: "ULTRA CONSERVATIVE — Seek small, steady daily gains through low-risk instruments. Use index ETFs, dividend stocks, and bond ETFs. Rotate into safe-haven assets when markets are volatile. Target 0.05-0.2% daily growth.",
-    2: "VERY CONSERVATIVE — Seek consistent daily gains through quality names. Use blue-chip stocks, sector ETFs, and commodity hedges. Take small profits frequently. Target 0.1-0.3% daily growth.",
+    2: "VERY CONSERVATIVE — Seek consistent daily gains through quality names. Use blue-chip stocks, sector ETFs, and bond hedges. Take small profits frequently. Target 0.1-0.3% daily growth.",
     3: "CONSERVATIVE — Seek reliable daily gains through established companies and sector rotation. Sell winners to lock in profits. Use covered-call-style thinking. Target 0.1-0.4% daily growth.",
     4: "MODERATELY CONSERVATIVE — Actively seek daily profit through mix of value and growth plays. Rotate sectors based on momentum. Use ETFs tactically. Target 0.2-0.5% daily growth.",
     5: "MODERATE — Actively trade to build daily profit. Mix of momentum plays, sector rotation, swing trades, and selective options. Sell positions that have gained to lock in profit. Target 0.3-0.7% daily growth.",
@@ -59,14 +59,14 @@ def build_system_prompt(agent_id: int, session_phase: str = "morning") -> str:
     min_cash = risk["min_cash_reserve_pct"] * 100
     max_loss = risk["max_daily_loss_pct"] * 100
     max_daily_inv = risk["max_daily_investment_pct"] * 100
-    allowed_types = risk.get("allowed_asset_types", ["stock", "etf", "mutual_fund", "commodity", "option"])
+    allowed_types = risk.get("allowed_asset_types", ["stock", "etf", "option", "crypto", "bond"])
 
     type_labels = {
-        "stock": "Stocks (individual equities and ETFs like AAPL, SPY, QQQ, TQQQ, XLE, etc.)",
-        "etf": "ETFs (sector, leveraged, and index ETFs like SPY, QQQ, TQQQ, SOXL, XLE, XLK, etc.)",
-        "mutual_fund": "Mutual Funds (index and managed funds like VFIAX, FXAIX, VTSAX, etc.)",
-        "commodity": "Commodity ETFs (GLD, SLV, USO, UNG, CORN, etc.)",
+        "stock": "Stocks (individual equities like AAPL, TSLA, NVDA, etc.)",
+        "etf": "ETFs (sector, leveraged, index, and commodity ETFs like SPY, QQQ, TQQQ, SOXL, GLD, XLE, etc.)",
         "option": "Options (calls and puts for leverage, income, and hedging)",
+        "crypto": "Crypto (BTC/USD, ETH/USD, SOL/USD, and other crypto trading pairs — 24/7 trading)",
+        "bond": "Bonds (US Treasury Bills and corporate bonds — investment-grade and high-yield)",
     }
     allowed_list = "\n".join(f"- **{type_labels.get(t, t)}**" for t in allowed_types)
     instrument_desc = ", ".join(allowed_types)
@@ -227,10 +227,10 @@ Every session, you MUST research DIFFERENT stocks than last time. Pick from all 
 
 When placing trades, use these asset types:
 - "stock" — individual equities (AAPL, TSLA, PLTR, NIO, etc.)
-- "etf" — ETFs (SPY, QQQ, TQQQ, SOXL, XLE, etc.)
-- "mutual_fund" — mutual funds and index funds (VFIAX, FXAIX, etc.)
-- "commodity" — commodity ETFs (GLD, SLV, USO, etc.)
+- "etf" — ETFs (SPY, QQQ, TQQQ, SOXL, XLE, GLD, etc.)
 - "option" — options contracts (use the contract symbol from the options chain)
+- "crypto" — cryptocurrencies (BTC/USD, ETH/USD, SOL/USD, etc.)
+- "bond" — T-Bills and corporate bonds
 
 ## Intraday Trading Process — STRICT RULES
 
@@ -265,7 +265,7 @@ def build_strategy_prompt(agent_id: int, portfolio_data: dict, recent_trades: li
     agent = get_agent(agent_id)
     level = risk["risk_level"]
     risk_desc = RISK_LEVEL_DESCRIPTIONS.get(level, RISK_LEVEL_DESCRIPTIONS[5])
-    allowed = risk.get("allowed_asset_types", ["stock", "etf", "mutual_fund", "commodity", "option"])
+    allowed = risk.get("allowed_asset_types", ["stock", "etf", "option", "crypto", "bond"])
 
     recent_trades_text = ""
     if recent_trades:
@@ -334,7 +334,7 @@ Instead of calling `place_trade`, output your proposals as a JSON block at the E
 [
   {
     "symbol": "TICKER",
-    "asset_type": "stock|etf|option|commodity|mutual_fund",
+    "asset_type": "stock|etf|option|crypto|bond",
     "action": "buy|sell",
     "quantity": 10,
     "reasoning": "Brief explanation of why this trade makes sense",
@@ -400,7 +400,7 @@ For EACH proposal, respond with a JSON decision:
 [
   {{
     "symbol": "TICKER",
-    "asset_type": "stock|etf|option|commodity|mutual_fund",
+    "asset_type": "stock|etf|option|crypto|bond",
     "action": "buy|sell",
     "quantity": 10,
     "reasoning": "Why you approved/modified this trade",

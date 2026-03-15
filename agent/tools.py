@@ -35,7 +35,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "get_market_data",
-        "description": "Get price history, technical indicators (SMA 20/50), fundamentals (PE, market cap, dividend yield), and recent performance for a stock, ETF, mutual fund, or commodity symbol.",
+        "description": "Get price history, technical indicators (SMA 20/50), fundamentals (PE, market cap, dividend yield), and recent performance for a stock, ETF, crypto, or bond symbol.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -92,8 +92,8 @@ TOOL_DEFINITIONS = [
                 },
                 "asset_type": {
                     "type": "string",
-                    "enum": ["stock", "etf", "mutual_fund", "commodity", "option"],
-                    "description": "Type of asset being traded. Use 'etf' for ETFs (SPY, QQQ, XLE, TQQQ, etc.), 'stock' for individual equities, 'commodity' for commodity ETFs (GLD, SLV, USO), 'option' for options contracts, 'mutual_fund' for mutual funds.",
+                    "enum": ["stock", "etf", "option", "crypto", "bond"],
+                    "description": "Type of asset being traded. Use 'stock' for individual equities, 'etf' for ETFs (SPY, QQQ, XLE, TQQQ, GLD, etc.), 'option' for options contracts, 'crypto' for cryptocurrencies (BTC/USD, ETH/USD, etc.), 'bond' for T-Bills and corporate bonds.",
                 },
                 "action": {
                     "type": "string",

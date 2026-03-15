@@ -32,6 +32,13 @@ from portfolio.database import (
     get_agent_trade_stats,
     get_agent_api_cost,
     get_provider_costs,
+    create_test_set,
+    get_test_set,
+    get_all_test_sets,
+    pause_test_set,
+    resume_test_set,
+    delete_test_set,
+    get_test_set_summary,
     RISK_PRESETS,
     ALL_ASSET_TYPES,
     SUPPORTED_MODELS,
@@ -406,31 +413,47 @@ async def api_generate_test_matrix(request: Request):
         body = await request.json()
         capital = float(body.get("starting_capital", 10000))
         risk_level = int(body.get("risk_level", 5))
-        check_interval = int(body.get("check_interval_minutes", 5))
+        check_interval = int(body.get("check_interval_minutes", 15))
         strategy_interval = int(body.get("strategy_interval_minutes", 60))
-        test_group = body.get("test_group", f"matrix-{dt_date.today().isoformat()}")
+        test_group = body.get("test_group", "").strip()
+        description = body.get("description", "").strip()
+        allowed_asset_types = body.get("allowed_asset_types", ALL_ASSET_TYPES)
+        if isinstance(allowed_asset_types, list):
+            asset_types_str = ",".join(t for t in allowed_asset_types if t in ALL_ASSET_TYPES)
+        else:
+            asset_types_str = ",".join(ALL_ASSET_TYPES)
 
-        scout_models = body.get("scout_models", SUPPORTED_MODELS)
-        decision_models = body.get("decision_models", SUPPORTED_MODELS)
-        scout_models = [m for m in scout_models if m in SUPPORTED_MODELS]
-        decision_models = [m for m in decision_models if m in SUPPORTED_MODELS]
-        if not scout_models or not decision_models:
+        if not test_group:
+            test_group = f"matrix-{dt_date.today().isoformat()}"
+
+        scout_models_list = body.get("scout_models", SUPPORTED_MODELS)
+        decision_models_list = body.get("decision_models", SUPPORTED_MODELS)
+        scout_models_list = [m for m in scout_models_list if m in SUPPORTED_MODELS]
+        decision_models_list = [m for m in decision_models_list if m in SUPPORTED_MODELS]
+        if not scout_models_list or not decision_models_list:
             return JSONResponse({"error": "Select at least one scout and one decision model"}, status_code=400)
 
-        existing = get_agents_by_test_group(test_group)
-        existing_names = {a["name"] for a in existing}
+        if get_test_set(test_group):
+            return JSONResponse({"error": f"Test set '{test_group}' already exists"}, status_code=400)
+
+        create_test_set(
+            name=test_group,
+            description=description,
+            check_interval_minutes=check_interval,
+            strategy_interval_minutes=strategy_interval,
+            risk_level=risk_level,
+            allowed_asset_types=asset_types_str,
+            starting_capital=capital,
+            scout_models=",".join(scout_models_list),
+            decision_models=",".join(decision_models_list),
+        )
 
         created = []
-        skipped = 0
-        for scout in scout_models:
-            for decision in decision_models:
+        for scout in scout_models_list:
+            for decision in decision_models_list:
                 scout_short = MODEL_SHORT_NAMES.get(scout, scout)
                 decision_short = MODEL_SHORT_NAMES.get(decision, decision)
                 name = f"{scout_short}\u2192{decision_short}"
-
-                if name in existing_names:
-                    skipped += 1
-                    continue
 
                 agent_id = create_agent(
                     name=name,
@@ -441,6 +464,7 @@ async def api_generate_test_matrix(request: Request):
                     check_interval_minutes=check_interval,
                     strategy_interval_minutes=strategy_interval,
                     test_group=test_group,
+                    allowed_asset_types=allowed_asset_types if isinstance(allowed_asset_types, list) else allowed_asset_types.split(","),
                 )
                 created.append({"id": agent_id, "name": name, "scout": scout, "decision": decision})
 
@@ -448,7 +472,7 @@ async def api_generate_test_matrix(request: Request):
             "status": "ok",
             "test_group": test_group,
             "created": len(created),
-            "skipped": skipped,
+            "skipped": 0,
             "agents": created,
         }
     except Exception as e:
@@ -461,7 +485,7 @@ async def api_test_matrix(test_group: Optional[str] = None):
         if not test_group:
             groups = get_test_groups()
             if not groups:
-                return {"agents": [], "test_group": None, "test_groups": []}
+                return {"agents": [], "test_group": None, "test_groups": [], "test_sets": []}
             test_group = groups[0]
 
         agents = get_agents_by_test_group(test_group)
@@ -512,11 +536,19 @@ async def api_test_matrix(test_group: Optional[str] = None):
 
         agent_ids = [a["id"] for a in agents]
         provider_costs = get_provider_costs(agent_ids)
+        test_set_info = get_test_set(test_group)
+
+        all_test_sets = []
+        for ts in get_all_test_sets():
+            ts_summary = get_test_set_summary(ts["name"])
+            all_test_sets.append({**ts, **ts_summary})
 
         return {
             "agents": result,
             "test_group": test_group,
             "test_groups": get_test_groups(),
+            "test_sets": all_test_sets,
+            "test_set": test_set_info,
             "provider_costs": provider_costs,
         }
     except Exception as e:
@@ -556,13 +588,29 @@ async def api_test_matrix_snapshots(
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/api/test-sets/{test_group}/pause")
+async def api_pause_test_set(test_group: str):
+    try:
+        count = pause_test_set(test_group)
+        return {"status": "ok", "paused": count}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/test-sets/{test_group}/resume")
+async def api_resume_test_set(test_group: str):
+    try:
+        count = resume_test_set(test_group)
+        return {"status": "ok", "resumed": count}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.delete("/api/test-matrix/{test_group}")
 async def api_delete_test_matrix(test_group: str):
     try:
-        agents = get_agents_by_test_group(test_group)
-        for agent in agents:
-            delete_agent(agent["id"])
-        return {"status": "ok", "deleted": len(agents)}
+        count = delete_test_set(test_group)
+        return {"status": "ok", "deleted": count}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

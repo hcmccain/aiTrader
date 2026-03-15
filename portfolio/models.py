@@ -7,9 +7,9 @@ from typing import Optional
 class AssetType(str, Enum):
     STOCK = "stock"
     ETF = "etf"
-    MUTUAL_FUND = "mutual_fund"
-    COMMODITY = "commodity"
     OPTION = "option"
+    CRYPTO = "crypto"
+    BOND = "bond"
 
 
 class TradeAction(str, Enum):

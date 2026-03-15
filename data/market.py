@@ -532,7 +532,7 @@ def search_symbols(query: str) -> list[dict]:
         "industrial": ["CAT", "DE", "HON", "UPS", "RTX", "LMT", "GE"],
         "commodities": ["GLD", "SLV", "USO", "UNG", "CORN", "WEAT", "DBA"],
         "etf": ["SPY", "QQQ", "IWM", "DIA", "VTI", "VOO", "ARKK"],
-        "mutual_fund": ["VFIAX", "FXAIX", "VTSAX", "VBTLX", "VGTSX"],
+        "crypto": ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD"],
         "bonds": ["TLT", "IEF", "SHY", "AGG", "BND", "LQD", "HYG"],
     }
 

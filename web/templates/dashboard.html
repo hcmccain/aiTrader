@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Portfolio Trader v5.0</title>
+    <title>AI Portfolio Trader v6.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <style>
@@ -136,7 +136,7 @@
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v5.0</span></h1>
+                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v6.0</span></h1>
                 <p class="text-sm text-slate-400 mt-1">
                     Multi-agent simulation &middot; Built with Claude
                     <span id="marketStatus" class="ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
@@ -466,20 +466,19 @@
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h2 class="text-lg font-bold text-white">Model Testing Arena</h2>
-                    <p class="text-xs text-slate-400 mt-0.5">Compare all scout/decision model combinations side-by-side</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Create test sets, compare models, intervals, risk levels, and asset types</p>
                 </div>
-                <div class="flex items-center gap-3">
-                    <select id="mtTestGroup" class="input-field text-sm py-1.5 px-3" onchange="loadTestMatrix(this.value)" style="min-width:180px">
-                        <option value="">No test groups</option>
-                    </select>
-                    <button onclick="openGenerateModal()" id="mtGenerateBtn" class="btn bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                        Generate Test Models
-                    </button>
-                    <button onclick="deleteTestMatrix()" id="mtDeleteBtn" class="btn bg-red-600/80 hover:bg-red-500 text-white px-3 py-2 rounded-lg text-sm font-medium hidden">
-                        Delete Matrix
-                    </button>
-                </div>
+                <button onclick="openGenerateModal()" class="btn bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                    + Create Test Set
+                </button>
             </div>
+
+            <!-- Test Set Cards -->
+            <div id="mtTestSetCards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 hidden"></div>
+
+            <!-- Hidden select for backward compat -->
+            <select id="mtTestGroup" class="hidden" onchange="loadTestMatrix(this.value)"></select>
+            <button id="mtDeleteBtn" class="hidden"></button>
 
             <!-- Summary Stats -->
             <div id="mtSummary" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-4 hidden">
@@ -564,8 +563,8 @@
 
             <!-- Empty State -->
             <div id="mtEmpty" class="card p-12 text-center">
-                <p class="text-slate-400 text-lg mb-2">No test matrix created yet</p>
-                <p class="text-slate-500 text-sm mb-4">Click "Generate Test Models" to select and create model combinations</p>
+                <p class="text-slate-400 text-lg mb-2">No test sets created yet</p>
+                <p class="text-slate-500 text-sm mb-4">Click "Create Test Set" to configure models, intervals, risk levels, and asset types for comparison</p>
             </div>
 
         </div><!-- END tab-modelTesting -->
@@ -595,10 +594,22 @@
             <div class="absolute inset-0 flex items-center justify-center p-4">
                 <div class="card relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto" style="background:#1e293b;">
                     <div class="flex items-center justify-between px-5 py-3 border-b border-slate-700">
-                        <h3 class="text-sm font-semibold text-white">Generate Test Models</h3>
+                        <h3 class="text-sm font-semibold text-white">Create Test Set</h3>
                         <button onclick="closeGenerateModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
                     </div>
                     <div class="px-5 py-4 space-y-5">
+
+                        <!-- Test Set Name & Description -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Test Set Name <span class="text-red-400">*</span></label>
+                                <input type="text" id="genName" placeholder="e.g. Stocks 15min Risk5" class="input-field w-full py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Description</label>
+                                <input type="text" id="genDescription" placeholder="Optional notes about this test" class="input-field w-full py-2 text-sm">
+                            </div>
+                        </div>
 
                         <!-- Scout Models -->
                         <div>
@@ -738,10 +749,35 @@
                             </div>
                         </div>
 
+                        <!-- Asset Types -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Allowed Asset Types</label>
+                                <button onclick="document.querySelectorAll('.gen-asset').forEach(cb=>cb.checked=true)" class="text-[10px] text-indigo-400 hover:text-indigo-300">Select All</button>
+                            </div>
+                            <div class="grid grid-cols-5 gap-2" id="genAssetChecks">
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="stock" checked class="gen-asset"> Stocks
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="etf" checked class="gen-asset"> ETFs
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="option" checked class="gen-asset"> Options
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="crypto" class="gen-asset"> Crypto
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 bg-slate-800 px-3 py-2 rounded cursor-pointer hover:bg-slate-700">
+                                    <input type="checkbox" value="bond" class="gen-asset"> Bonds
+                                </label>
+                            </div>
+                        </div>
+
                         <!-- Generate Button -->
                         <button onclick="submitGenerateMatrix()" id="genSubmitBtn"
                             class="btn w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-lg text-sm font-semibold">
-                            Generate Test Models
+                            Create Test Set
                         </button>
                     </div>
                 </div>
@@ -800,16 +836,16 @@
                             <span class="text-sm text-slate-300">ETFs</span>
                         </label>
                         <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 hover:border-slate-500 cursor-pointer transition-colors">
-                            <input type="checkbox" id="modalTypeMutualFund" value="mutual_fund" class="modal-asset-type accent-indigo-500 w-4 h-4" checked>
-                            <span class="text-sm text-slate-300">Mutual Funds</span>
+                            <input type="checkbox" id="modalTypeOption" value="option" class="modal-asset-type accent-indigo-500 w-4 h-4" checked>
+                            <span class="text-sm text-slate-300">Options</span>
                         </label>
                         <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 hover:border-slate-500 cursor-pointer transition-colors">
-                            <input type="checkbox" id="modalTypeCommodity" value="commodity" class="modal-asset-type accent-indigo-500 w-4 h-4" checked>
-                            <span class="text-sm text-slate-300">Commodities</span>
+                            <input type="checkbox" id="modalTypeCrypto" value="crypto" class="modal-asset-type accent-indigo-500 w-4 h-4">
+                            <span class="text-sm text-slate-300">Crypto</span>
                         </label>
                         <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 hover:border-slate-500 cursor-pointer transition-colors col-span-2">
-                            <input type="checkbox" id="modalTypeOption" value="option" class="modal-asset-type accent-indigo-500 w-4 h-4" checked>
-                            <span class="text-sm text-slate-300">Options (Calls & Puts)</span>
+                            <input type="checkbox" id="modalTypeBond" value="bond" class="modal-asset-type accent-indigo-500 w-4 h-4">
+                            <span class="text-sm text-slate-300">Bonds (T-Bills & Corporate)</span>
                         </label>
                     </div>
                     <p class="text-xs text-slate-500 mt-1.5">Select at least one type. The agent will only trade the selected instruments.</p>
@@ -1429,10 +1465,10 @@
                     ? '<span class="text-[10px] ml-1 px-1 py-0.5 rounded bg-purple-900/50 text-purple-300">OPT</span>'
                     : t.asset_type === 'etf'
                     ? '<span class="text-[10px] ml-1 px-1 py-0.5 rounded bg-cyan-900/50 text-cyan-300">ETF</span>'
-                    : t.asset_type === 'commodity'
-                    ? '<span class="text-[10px] ml-1 px-1 py-0.5 rounded bg-amber-900/50 text-amber-300">CMD</span>'
-                    : t.asset_type === 'mutual_fund'
-                    ? '<span class="text-[10px] ml-1 px-1 py-0.5 rounded bg-teal-900/50 text-teal-300">MF</span>'
+                    : t.asset_type === 'crypto'
+                    ? '<span class="text-[10px] ml-1 px-1 py-0.5 rounded bg-amber-900/50 text-amber-300">CRYPTO</span>'
+                    : t.asset_type === 'bond'
+                    ? '<span class="text-[10px] ml-1 px-1 py-0.5 rounded bg-teal-900/50 text-teal-300">BOND</span>'
                     : '';
 
                 // Risk level badge
@@ -1676,7 +1712,7 @@
                 document.getElementById('modalScoutModel').value = agent.scout_model || 'claude-haiku-4-20250414';
                 document.getElementById('modalCheckInterval').value = agent.check_interval_minutes || 15;
                 document.getElementById('modalStrategyInterval').value = agent.strategy_interval_minutes || 60;
-                setModalAssetTypes(agent.allowed_asset_types || ['stock','etf','mutual_fund','commodity','option']);
+                setModalAssetTypes(agent.allowed_asset_types || ['stock','etf','option','crypto','bond']);
             } else {
                 document.getElementById('modalTitle').textContent = 'New Agent';
                 document.getElementById('modalSaveBtn').textContent = 'Create Agent';
@@ -1689,7 +1725,7 @@
                 document.getElementById('modalScoutModel').value = 'claude-haiku-4-20250414';
                 document.getElementById('modalCheckInterval').value = 15;
                 document.getElementById('modalStrategyInterval').value = 60;
-                setModalAssetTypes(['stock','etf','mutual_fund','commodity','option']);
+                setModalAssetTypes(['stock','etf','option','crypto','bond']);
             }
         }
 
@@ -1827,7 +1863,7 @@
         function hideRunningModal() { document.getElementById('runningModal').classList.add('hidden'); }
 
         function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
-        const ASSET_LABELS = {stock:'Stocks',etf:'ETFs',mutual_fund:'Mutual Funds',commodity:'Commodities',option:'Options'};
+        const ASSET_LABELS = {stock:'Stocks',etf:'ETFs',option:'Options',crypto:'Crypto',bond:'Bonds'};
         function assetLabel(t) { return ASSET_LABELS[t]||t; }
 
         // ---- SSE Real-time Updates ----
@@ -2247,51 +2283,53 @@
         document.getElementById('genCheckInterval').addEventListener('input', updateComboCount);
 
         async function submitGenerateMatrix() {
+            const name = document.getElementById('genName').value.trim();
+            if (!name) { showToast('Test set name is required', 'error'); return; }
+
             const scouts = [...document.querySelectorAll('.gen-scout:checked')].map(cb => cb.value);
             const decisions = [...document.querySelectorAll('.gen-decision:checked')].map(cb => cb.value);
             if (!scouts.length || !decisions.length) { showToast('Select at least one scout and one decision model', 'error'); return; }
 
+            const assetTypes = [...document.querySelectorAll('.gen-asset:checked')].map(cb => cb.value);
+            if (!assetTypes.length) { showToast('Select at least one asset type', 'error'); return; }
+
             const capital = parseInt(document.getElementById('genCapital').value) || 10000;
             const risk = parseInt(document.getElementById('genRisk').value) || 5;
             const checkInterval = parseInt(document.getElementById('genCheckInterval').value) || 15;
+            const description = document.getElementById('genDescription').value.trim();
 
             const btn = document.getElementById('genSubmitBtn');
             btn.disabled = true;
-            btn.textContent = 'Generating...';
+            btn.textContent = 'Creating...';
             try {
                 const res = await fetch('/api/agents/generate-test-matrix', {
                     method: 'POST',
                     headers: {'Content-Type':'application/json'},
                     body: JSON.stringify({
+                        test_group: name,
+                        description: description,
                         starting_capital: capital,
                         risk_level: risk,
                         check_interval_minutes: checkInterval,
                         strategy_interval_minutes: 60,
                         scout_models: scouts,
                         decision_models: decisions,
+                        allowed_asset_types: assetTypes,
                     }),
                 });
                 const data = await res.json();
                 if (data.error) { showToast(data.error, 'error'); return; }
-                showToast(`Created ${data.created} agents (${data.skipped} already existed)`);
+                showToast(`Created test set "${name}" with ${data.created} agents`);
+                document.getElementById('genName').value = '';
+                document.getElementById('genDescription').value = '';
                 closeGenerateModal();
                 await loadTestMatrix(data.test_group);
             } catch(e) { showToast('Failed: '+e.message, 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Generate Test Models'; }
+            finally { btn.disabled = false; btn.textContent = 'Create Test Set'; }
         }
 
-        async function deleteTestMatrix() {
-            const sel = document.getElementById('mtTestGroup');
-            const group = sel.value;
-            if (!group) return;
-            if (!confirm(`Delete all agents in test group "${group}"?`)) return;
-            try {
-                const res = await fetch(`/api/test-matrix/${encodeURIComponent(group)}`, {method:'DELETE'});
-                const data = await res.json();
-                showToast(`Deleted ${data.deleted} agents`);
-                await loadTestMatrix();
-            } catch(e) { showToast('Failed: '+e.message, 'error'); }
-        }
+        let mtTestSets = [];
+        let mtSelectedGroup = null;
 
         async function loadTestMatrix(group) {
             try {
@@ -2300,20 +2338,21 @@
                 const res = await fetch(url);
                 const data = await res.json();
 
-                const sel = document.getElementById('mtTestGroup');
-                sel.innerHTML = (data.test_groups || []).map(g =>
-                    `<option value="${g}" ${g===data.test_group?'selected':''}>${g}</option>`
-                ).join('') || '<option value="">No test groups</option>';
-
+                mtTestSets = data.test_sets || [];
+                mtSelectedGroup = data.test_group;
                 mtData = data.agents || [];
                 mtProviderCosts = data.provider_costs || {claude: 0, openai: 0, gemini: 0};
-                const hasData = mtData.length > 0;
 
-                document.getElementById('mtEmpty').style.display = hasData ? 'none' : '';
+                renderTestSetCards();
+
+                const hasData = mtData.length > 0;
+                const hasAnySets = mtTestSets.length > 0;
+
+                document.getElementById('mtEmpty').style.display = hasAnySets ? 'none' : '';
+                document.getElementById('mtTestSetCards').classList.toggle('hidden', !hasAnySets);
                 document.getElementById('mtSummary').classList.toggle('hidden', !hasData);
                 document.getElementById('mtTableCard').style.display = hasData ? '' : 'none';
                 document.getElementById('mtChartCard').style.display = hasData ? '' : 'none';
-                document.getElementById('mtDeleteBtn').classList.toggle('hidden', !hasData);
 
                 if (hasData) {
                     updateMtSummary();
@@ -2321,6 +2360,70 @@
                     loadMtSnapshots(data.test_group);
                 }
             } catch(e) { console.warn('loadTestMatrix error:', e); }
+        }
+
+        function renderTestSetCards() {
+            const container = document.getElementById('mtTestSetCards');
+            if (!mtTestSets.length) { container.innerHTML = ''; return; }
+
+            container.innerHTML = mtTestSets.map(ts => {
+                const active = ts.is_active;
+                const selected = ts.name === mtSelectedGroup;
+                const borderClass = selected ? 'border-indigo-500' : 'border-slate-700';
+                const opacityClass = active ? '' : 'opacity-50';
+                const assets = (ts.allowed_asset_types || '').split(',').map(a => ASSET_LABELS[a.trim()] || a).join(', ');
+                const statusBadge = active
+                    ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-400">Active</span>'
+                    : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">Paused</span>';
+                const costStr = '$' + (ts.total_cost || 0).toFixed(2);
+
+                return `<div class="card p-3 cursor-pointer border ${borderClass} ${opacityClass} hover:border-indigo-400 transition-colors" onclick="loadTestMatrix('${esc(ts.name)}')">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-semibold text-white">${esc(ts.name)}</span>
+                            ${statusBadge}
+                        </div>
+                        <div class="flex items-center gap-1" onclick="event.stopPropagation()">
+                            <button onclick="toggleTestSet('${esc(ts.name)}', ${active ? 0 : 1})" title="${active ? 'Pause' : 'Resume'}" class="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white">
+                                ${active
+                                    ? '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
+                                    : '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>'}
+                            </button>
+                            <button onclick="deleteTestSet('${esc(ts.name)}')" title="Delete" class="p-1 rounded hover:bg-red-900/50 text-slate-400 hover:text-red-400">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    ${ts.description ? `<p class="text-[11px] text-slate-400 mb-2">${esc(ts.description)}</p>` : ''}
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                        <span>${ts.total_agents} agents</span>
+                        <span>Risk ${ts.risk_level}/10</span>
+                        <span>${ts.check_interval_minutes}min interval</span>
+                        <span class="text-amber-400/70">${costStr}</span>
+                    </div>
+                    <div class="text-[10px] text-slate-600 mt-1">${assets}</div>
+                </div>`;
+            }).join('');
+        }
+
+        async function toggleTestSet(name, activate) {
+            try {
+                const endpoint = activate ? 'resume' : 'pause';
+                const res = await fetch(`/api/test-sets/${encodeURIComponent(name)}/${endpoint}`, {method:'POST'});
+                const data = await res.json();
+                showToast(`${activate ? 'Resumed' : 'Paused'} test set "${name}" (${data[activate?'resumed':'paused']} agents)`);
+                await loadTestMatrix(mtSelectedGroup);
+            } catch(e) { showToast('Failed: '+e.message, 'error'); }
+        }
+
+        async function deleteTestSet(name) {
+            if (!confirm(`Delete test set "${name}" and all its agents?`)) return;
+            try {
+                const res = await fetch(`/api/test-matrix/${encodeURIComponent(name)}`, {method:'DELETE'});
+                const data = await res.json();
+                showToast(`Deleted test set "${name}" (${data.deleted} agents)`);
+                await loadTestMatrix();
+            } catch(e) { showToast('Failed: '+e.message, 'error'); }
         }
 
         function updateMtSummary() {

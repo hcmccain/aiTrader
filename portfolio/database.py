@@ -30,7 +30,7 @@ def init_db():
             min_cash_reserve_pct REAL NOT NULL DEFAULT 10,
             max_daily_loss_pct REAL NOT NULL DEFAULT 3,
             max_daily_investment_pct REAL NOT NULL DEFAULT 40,
-            allowed_asset_types TEXT NOT NULL DEFAULT 'stock,etf,mutual_fund,commodity,option',
+            allowed_asset_types TEXT NOT NULL DEFAULT 'stock,etf,option,crypto,bond',
             model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
             scout_model TEXT NOT NULL DEFAULT 'claude-haiku-4-20250414',
             check_interval_minutes INTEGER NOT NULL DEFAULT 15,
@@ -118,13 +118,28 @@ def init_db():
             cost_usd REAL NOT NULL DEFAULT 0,
             FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
         );
+
+        CREATE TABLE IF NOT EXISTS test_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT DEFAULT '',
+            check_interval_minutes INTEGER NOT NULL DEFAULT 15,
+            strategy_interval_minutes INTEGER NOT NULL DEFAULT 60,
+            risk_level INTEGER NOT NULL DEFAULT 5,
+            allowed_asset_types TEXT NOT NULL DEFAULT 'stock,etf,option,crypto,bond',
+            starting_capital REAL NOT NULL DEFAULT 10000,
+            scout_models TEXT NOT NULL DEFAULT '',
+            decision_models TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
     """)
 
     # Migration: add allowed_asset_types column if missing (for existing databases)
     cols = [row[1] for row in conn.execute("PRAGMA table_info(agents)").fetchall()]
     if "allowed_asset_types" not in cols:
         conn.execute(
-            "ALTER TABLE agents ADD COLUMN allowed_asset_types TEXT NOT NULL DEFAULT 'stock,etf,mutual_fund,commodity,option'"
+            "ALTER TABLE agents ADD COLUMN allowed_asset_types TEXT NOT NULL DEFAULT 'stock,etf,option,crypto,bond'"
         )
 
     # Migration: add model column to agents
@@ -163,6 +178,44 @@ def init_db():
             "ALTER TABLE token_usage ADD COLUMN model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514'"
         )
 
+    # Migration: backfill test_sets from existing test_group strings
+    existing_groups = conn.execute(
+        "SELECT DISTINCT test_group FROM agents WHERE test_group != ''"
+    ).fetchall()
+    for row in existing_groups:
+        group_name = row["test_group"]
+        exists = conn.execute(
+            "SELECT 1 FROM test_sets WHERE name = ?", (group_name,)
+        ).fetchone()
+        if not exists:
+            sample = conn.execute(
+                "SELECT * FROM agents WHERE test_group = ? LIMIT 1", (group_name,)
+            ).fetchone()
+            if sample:
+                scouts = conn.execute(
+                    "SELECT DISTINCT scout_model FROM agents WHERE test_group = ?", (group_name,)
+                ).fetchall()
+                decisions = conn.execute(
+                    "SELECT DISTINCT model FROM agents WHERE test_group = ?", (group_name,)
+                ).fetchall()
+                conn.execute(
+                    """INSERT INTO test_sets (name, check_interval_minutes, strategy_interval_minutes,
+                       risk_level, allowed_asset_types, starting_capital, scout_models, decision_models,
+                       is_active, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                    (
+                        group_name,
+                        sample["check_interval_minutes"],
+                        sample["strategy_interval_minutes"],
+                        sample["risk_level"],
+                        sample["allowed_asset_types"],
+                        sample["starting_capital"],
+                        ",".join(r["scout_model"] for r in scouts),
+                        ",".join(r["model"] for r in decisions),
+                        sample["created_at"],
+                    ),
+                )
+
     conn.commit()
     conn.close()
 
@@ -185,7 +238,7 @@ RISK_PRESETS = {
 }
 
 
-ALL_ASSET_TYPES = ["stock", "etf", "mutual_fund", "commodity", "option"]
+ALL_ASSET_TYPES = ["stock", "etf", "option", "crypto", "bond"]
 
 
 SUPPORTED_MODELS = [
@@ -334,6 +387,134 @@ def get_test_groups() -> list[str]:
     ).fetchall()
     conn.close()
     return [r["test_group"] for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Test Sets
+# ---------------------------------------------------------------------------
+
+def create_test_set(
+    name: str,
+    description: str = "",
+    check_interval_minutes: int = 15,
+    strategy_interval_minutes: int = 60,
+    risk_level: int = 5,
+    allowed_asset_types: str = "stock,etf,option,crypto,bond",
+    starting_capital: float = 10000,
+    scout_models: str = "",
+    decision_models: str = "",
+) -> int:
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO test_sets (name, description, check_interval_minutes,
+           strategy_interval_minutes, risk_level, allowed_asset_types,
+           starting_capital, scout_models, decision_models, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+        (
+            name, description,
+            max(2, min(60, check_interval_minutes)),
+            max(15, min(240, strategy_interval_minutes)),
+            max(1, min(10, risk_level)),
+            allowed_asset_types, starting_capital,
+            scout_models, decision_models,
+            datetime.now().isoformat(),
+        ),
+    )
+    test_set_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return test_set_id
+
+
+def get_test_set(name: str) -> Optional[dict]:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM test_sets WHERE name = ?", (name,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_all_test_sets() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM test_sets ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def pause_test_set(name: str) -> int:
+    """Pause a test set and all its agents. Returns number of agents paused."""
+    conn = get_connection()
+    conn.execute("UPDATE test_sets SET is_active = 0 WHERE name = ?", (name,))
+    cur = conn.execute(
+        "UPDATE agents SET is_active = 0 WHERE test_group = ? AND is_active = 1", (name,)
+    )
+    count = cur.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
+def resume_test_set(name: str) -> int:
+    """Resume a test set and all its agents. Returns number of agents resumed."""
+    conn = get_connection()
+    conn.execute("UPDATE test_sets SET is_active = 1 WHERE name = ?", (name,))
+    cur = conn.execute(
+        "UPDATE agents SET is_active = 1 WHERE test_group = ? AND is_active = 0", (name,)
+    )
+    count = cur.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
+def delete_test_set(name: str) -> int:
+    """Delete a test set and all its agents. Returns number of agents deleted."""
+    conn = get_connection()
+    agents = conn.execute(
+        "SELECT id FROM agents WHERE test_group = ?", (name,)
+    ).fetchall()
+    for a in agents:
+        conn.execute("DELETE FROM agents WHERE id = ?", (a["id"],))
+    conn.execute("DELETE FROM test_sets WHERE name = ?", (name,))
+    conn.commit()
+    conn.close()
+    return len(agents)
+
+
+def get_test_set_summary(name: str) -> dict:
+    """Get aggregate stats for a test set."""
+    conn = get_connection()
+    agents = conn.execute(
+        "SELECT * FROM agents WHERE test_group = ?", (name,)
+    ).fetchall()
+    agent_ids = [a["id"] for a in agents]
+
+    total_agents = len(agents)
+    active_agents = sum(1 for a in agents if a["is_active"])
+
+    if not agent_ids:
+        conn.close()
+        return {
+            "total_agents": 0, "active_agents": 0,
+            "total_trades": 0, "total_cost": 0,
+        }
+
+    placeholders = ",".join("?" * len(agent_ids))
+    trades_row = conn.execute(
+        f"SELECT COUNT(*) as cnt FROM trades WHERE agent_id IN ({placeholders})",
+        agent_ids,
+    ).fetchone()
+    cost_row = conn.execute(
+        f"SELECT COALESCE(SUM(cost_usd), 0) as cost FROM token_usage WHERE agent_id IN ({placeholders})",
+        agent_ids,
+    ).fetchone()
+
+    conn.close()
+    return {
+        "total_agents": total_agents,
+        "active_agents": active_agents,
+        "total_trades": trades_row["cnt"],
+        "total_cost": round(cost_row["cost"], 4),
+    }
 
 
 def get_agent_trade_stats(agent_id: int) -> dict:
