@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Portfolio Trader v4.0</title>
+    <title>AI Portfolio Trader v5.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <style>
@@ -136,7 +136,7 @@
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v4.0</span></h1>
+                <h1 class="text-2xl font-bold text-white">AI Portfolio Trader <span class="text-xs font-normal text-slate-500">v5.0</span></h1>
                 <p class="text-sm text-slate-400 mt-1">
                     Multi-agent simulation &middot; Built with Claude
                     <span id="marketStatus" class="ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
@@ -668,10 +668,43 @@
                             </div>
                         </div>
 
-                        <!-- Combo Count -->
-                        <div class="card px-4 py-2.5 text-center">
-                            <span class="text-xs text-slate-400">Selected combinations: </span>
-                            <span class="text-sm font-bold text-indigo-400" id="genComboCount">64</span>
+                        <!-- Combo Count & Cost Estimate -->
+                        <div class="card px-4 py-3 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <span class="text-xs text-slate-400">Combinations: </span>
+                                    <span class="text-sm font-bold text-indigo-400" id="genComboCount">64</span>
+                                </div>
+                                <div>
+                                    <span class="text-xs text-slate-400">Est. daily cost: </span>
+                                    <span class="text-sm font-bold text-amber-400" id="genDailyCost">--</span>
+                                </div>
+                                <div>
+                                    <span class="text-xs text-slate-400">Est. weekly: </span>
+                                    <span class="text-sm font-bold text-amber-400/70" id="genWeeklyCost">--</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-center gap-5 text-[11px]">
+                                <span class="text-slate-500">Claude <span class="font-mono text-orange-400" id="genClaudeDaily">$0</span></span>
+                                <span class="text-slate-500">OpenAI <span class="font-mono text-green-400" id="genOpenAIDDaily">$0</span></span>
+                                <span class="text-slate-500">Gemini <span class="font-mono text-blue-400" id="genGeminiDaily">$0</span></span>
+                            </div>
+                            <div id="genModelBreakdown" class="hidden border-t border-slate-700 pt-2 mt-1">
+                                <table class="w-full text-[11px]">
+                                    <thead>
+                                        <tr class="text-slate-500">
+                                            <th class="text-left font-medium py-0.5">Model</th>
+                                            <th class="text-right font-medium py-0.5">As Scout</th>
+                                            <th class="text-right font-medium py-0.5">As Decision</th>
+                                            <th class="text-right font-medium py-0.5">Daily Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="genModelRows" class="text-slate-400"></tbody>
+                                </table>
+                            </div>
+                            <div class="text-center">
+                                <button type="button" onclick="toggleModelBreakdown()" class="text-[10px] text-indigo-400 hover:text-indigo-300" id="genBreakdownToggle">Show model breakdown</button>
+                            </div>
                         </div>
 
                         <!-- Config -->
@@ -2111,6 +2144,17 @@
         const SECTION_LABELS = { ce:'Cheap/Exp', ee:'Exp/Exp', cc:'Cheap/Cheap', ec:'Exp/Cheap' };
         const SECTION_COLORS = { ce:'#60a5fa', ee:'#c084fc', cc:'#4ade80', ec:'#fbbf24' };
 
+        const MODEL_SESSION_COST = {
+            'claude-haiku-4-20250414':   { scout: 0.030, decision: 0.008, provider: 'claude' },
+            'claude-sonnet-4-20250514':  { scout: 0.113, decision: 0.030, provider: 'claude' },
+            'claude-opus-4-20250514':    { scout: 0.563, decision: 0.150, provider: 'claude' },
+            'gpt-4o':                    { scout: 0.085, decision: 0.023, provider: 'openai' },
+            'gpt-4o-mini':               { scout: 0.005, decision: 0.001, provider: 'openai' },
+            'o3-mini':                   { scout: 0.037, decision: 0.010, provider: 'openai' },
+            'gemini-2.5-pro':            { scout: 0.060, decision: 0.016, provider: 'gemini' },
+            'gemini-2.5-flash':          { scout: 0.005, decision: 0.001, provider: 'gemini' },
+        };
+
         function openGenerateModal() {
             document.getElementById('generateModal').classList.remove('hidden');
             updateComboCount();
@@ -2122,19 +2166,85 @@
             document.querySelectorAll(`.gen-${role}`).forEach(cb => cb.checked = state);
             updateComboCount();
         }
+        function toggleModelBreakdown() {
+            const el = document.getElementById('genModelBreakdown');
+            const btn = document.getElementById('genBreakdownToggle');
+            const hidden = el.classList.toggle('hidden');
+            btn.textContent = hidden ? 'Show model breakdown' : 'Hide model breakdown';
+        }
+
         function updateComboCount() {
-            const scouts = document.querySelectorAll('.gen-scout:checked').length;
-            const decisions = document.querySelectorAll('.gen-decision:checked').length;
-            const count = scouts * decisions;
+            const scoutModels = [...document.querySelectorAll('.gen-scout:checked')].map(cb => cb.value);
+            const decisionModels = [...document.querySelectorAll('.gen-decision:checked')].map(cb => cb.value);
+            const count = scoutModels.length * decisionModels.length;
+            const interval = parseInt(document.getElementById('genCheckInterval').value) || 15;
+            const sessionsPerDay = Math.floor(390 / interval);
+
             document.getElementById('genComboCount').textContent = count;
             const capital = parseInt(document.getElementById('genCapital').value) || 10000;
             document.getElementById('genTotalCapital').textContent = (count * capital).toLocaleString();
+
+            const providerTotals = { claude: 0, openai: 0, gemini: 0 };
+            const modelDailyCosts = {};
+
+            for (const sm of scoutModels) {
+                const sc = MODEL_SESSION_COST[sm];
+                if (!sc) continue;
+                const dailyScout = sc.scout * sessionsPerDay * decisionModels.length;
+                providerTotals[sc.provider] += dailyScout;
+                if (!modelDailyCosts[sm]) modelDailyCosts[sm] = { scout: 0, decision: 0 };
+                modelDailyCosts[sm].scout += dailyScout;
+            }
+            for (const dm of decisionModels) {
+                const dc = MODEL_SESSION_COST[dm];
+                if (!dc) continue;
+                const dailyDecision = dc.decision * sessionsPerDay * scoutModels.length;
+                providerTotals[dc.provider] += dailyDecision;
+                if (!modelDailyCosts[dm]) modelDailyCosts[dm] = { scout: 0, decision: 0 };
+                modelDailyCosts[dm].decision += dailyDecision;
+            }
+
+            const totalDaily = providerTotals.claude + providerTotals.openai + providerTotals.gemini;
+            const fmtCost = v => v >= 1 ? '$' + v.toFixed(2) : '$' + v.toFixed(2);
+
+            document.getElementById('genDailyCost').textContent = fmtCost(totalDaily);
+            document.getElementById('genWeeklyCost').textContent = fmtCost(totalDaily * 5);
+            document.getElementById('genClaudeDaily').textContent = fmtCost(providerTotals.claude);
+            document.getElementById('genOpenAIDDaily').textContent = fmtCost(providerTotals.openai);
+            document.getElementById('genGeminiDaily').textContent = fmtCost(providerTotals.gemini);
+
+            const shortNames = {
+                'claude-haiku-4-20250414':'Haiku','claude-sonnet-4-20250514':'Sonnet','claude-opus-4-20250514':'Opus',
+                'gpt-4o':'GPT-4o','gpt-4o-mini':'GPT-4o Mini','o3-mini':'o3-mini',
+                'gemini-2.5-pro':'Gemini Pro','gemini-2.5-flash':'Gemini Flash',
+            };
+            const provColors = { claude:'text-orange-400', openai:'text-green-400', gemini:'text-blue-400' };
+            const allModels = [...new Set([...scoutModels, ...decisionModels])];
+            allModels.sort((a,b) => {
+                const ta = (modelDailyCosts[a]?.scout||0) + (modelDailyCosts[a]?.decision||0);
+                const tb = (modelDailyCosts[b]?.scout||0) + (modelDailyCosts[b]?.decision||0);
+                return tb - ta;
+            });
+            const tbody = document.getElementById('genModelRows');
+            tbody.innerHTML = allModels.map(m => {
+                const d = modelDailyCosts[m] || { scout: 0, decision: 0 };
+                const total = d.scout + d.decision;
+                const prov = MODEL_SESSION_COST[m]?.provider || 'claude';
+                const color = provColors[prov];
+                return `<tr>
+                    <td class="py-0.5 ${color}">${shortNames[m]||m}</td>
+                    <td class="text-right py-0.5 font-mono">${d.scout > 0 ? fmtCost(d.scout) : '<span class="text-slate-600">—</span>'}</td>
+                    <td class="text-right py-0.5 font-mono">${d.decision > 0 ? fmtCost(d.decision) : '<span class="text-slate-600">—</span>'}</td>
+                    <td class="text-right py-0.5 font-mono font-semibold">${fmtCost(total)}</td>
+                </tr>`;
+            }).join('');
         }
 
         document.addEventListener('change', e => {
             if (e.target.classList.contains('gen-scout') || e.target.classList.contains('gen-decision') || e.target.id === 'genCapital') updateComboCount();
         });
         document.getElementById('genCapital').addEventListener('input', updateComboCount);
+        document.getElementById('genCheckInterval').addEventListener('input', updateComboCount);
 
         async function submitGenerateMatrix() {
             const scouts = [...document.querySelectorAll('.gen-scout:checked')].map(cb => cb.value);
